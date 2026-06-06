@@ -1,69 +1,130 @@
 import { useEffect, useState } from 'react'
-import { api, pct, fmtHM } from '../api.js'
+import { Gauge, Power, Boxes, ClipboardList, Bell } from 'lucide-react'
+import { api, pct } from '../api.js'
 import Card from './Card.jsx'
 
-function oeeColor(v) {
-  if (v >= 0.4) return 'var(--green)'
-  if (v >= 0.15) return 'var(--amber)'
+function oeeColor(v) {            // v: yüzde (0-100)
+  if (v >= 40) return 'var(--green)'
+  if (v >= 15) return 'var(--amber)'
   return 'var(--red)'
 }
 
+// Eksensiz mini çizgi grafik (sparkline) — son 7 gün OEE gidişatı.
+function Sparkline({ values, w = 96, h = 26 }) {
+  if (!values || values.length < 2) return <span className="muted small">yetersiz veri</span>
+  const min = Math.min(...values), max = Math.max(...values), rng = (max - min) || 1
+  const pts = values.map((v, i) =>
+    `${(i / (values.length - 1)) * w},${h - 2 - ((v - min) / rng) * (h - 4)}`).join(' ')
+  const up = values[values.length - 1] >= values[0]
+  return (
+    <svg width={w} height={h} style={{ display: 'block' }}>
+      <polyline points={pts} fill="none" stroke={up ? '#25b06b' : '#e2483d'} strokeWidth="1.8"
+                strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function Kpi({ Icon, tone, label, value, sub }) {
+  return (
+    <div className="kpi">
+      <div className={`kpi-ic ${tone}`}><Icon size={20} /></div>
+      <div>
+        <div className="kpi-val">{value}</div>
+        <div className="kpi-label">{label}</div>
+        {sub && <div className="kpi-sub">{sub}</div>}
+      </div>
+    </div>
+  )
+}
+
 export default function FleetView({ date }) {
-  const [fleet, setFleet] = useState(null)
-  const [patterns, setPatterns] = useState(null)
+  const [d, setD] = useState(null)
+  const [pat, setPat] = useState(null)
   const [err, setErr] = useState(null)
 
   useEffect(() => {
     if (!date) return
-    setErr(null); setFleet(null)
-    api.fleetOverview(date).then(setFleet).catch((e) => setErr(e.message))
-    api.fleetAlarmPatterns().then(setPatterns).catch(() => {})
+    setErr(null); setD(null)
+    api.fleetDashboard(date).then(setD).catch((e) => setErr(e.message))
+    api.fleetAlarmPatterns().then(setPat).catch(() => {})
   }, [date])
 
   if (err) return <div className="err">{err}</div>
-  if (!fleet) return <div className="spin">Yükleniyor…</div>
+  if (!d) return <div className="spin">Yükleniyor…</div>
+  const k = d.kpi
 
   return (
     <>
-      <Card title={`Öncelik Panosu · ${date} (en kötü OEE üstte)`}
-            action={<span className="muted small">{fleet.count} makine</span>} noPad>
+      {/* 1) Filo KPI'ları */}
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 18 }}>
+        <Kpi Icon={Gauge} tone="blue" label="Filonun Ortalama OEE'si" value={`%${k.avg_oee}`}
+             sub={`${date} · 7 günlük ortalama`} />
+        <Kpi Icon={Power} tone="green" label="Aktif Çalışan Makine" value={`${k.active}/${k.total}`}
+             sub="vardiyada çalışan / toplam" />
+        <Kpi Icon={Boxes} tone="amber" label="Toplam Günlük Üretim" value={k.total_production.toLocaleString()}
+             sub="adet (tüm makineler)" />
+      </div>
+
+      {/* 2) Makine Durum Matrisi */}
+      <div className="section-title">Makine Durum Matrisi</div>
+      <div className="mx-grid">
+        {d.machines.map((m) => (
+          <div key={m.unit_uid} className={`mx-card ${m.status}`}>
+            <div className="mx-top">
+              <span className="mx-name">{m.machine}</span>
+              <span className="mx-badge">{m.status === 'running' ? 'Çalışıyor' : 'Durdu'}</span>
+            </div>
+            <div className="mx-oee" style={{ color: oeeColor(m.oee) }}>%{m.oee}</div>
+            <div className="mx-oee-l">anlık OEE</div>
+            <div className="mx-meta">
+              <span><ClipboardList size={13} /> {m.workorders} iş emri</span>
+              <span><Bell size={13} /> {m.alarms} alarm</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 3) Öncelik Panosu + 7 günlük trend */}
+      <div className="section-title" style={{ marginTop: 24 }}>Öncelik Panosu (7 günlük ort. OEE — en kötü üstte)</div>
+      <Card title={`Filo · ${date}`} noPad>
         <table className="atable">
           <thead>
-            <tr><th>#</th><th>Makine</th><th>OEE</th><th>Availability</th>
-              <th>Performans</th><th>Kalite</th><th>Plansız Duruş</th></tr>
+            <tr><th>#</th><th>Makine</th><th>OEE (7g ort.)</th><th>Availability</th>
+              <th>Performans</th><th>Plansız Duruş</th><th style={{ width: 120 }}>Trend (Son 7 Gün)</th></tr>
           </thead>
           <tbody>
-            {fleet.machines.map((m, i) => (
+            {d.board.map((m, i) => (
               <tr key={m.unit_uid}>
                 <td className="muted">{i + 1}</td>
                 <td><b>{m.machine}</b></td>
-                <td><span className="badge" style={{ background: 'transparent', color: oeeColor(m.oee), fontWeight: 800 }}>{pct(m.oee)}</span></td>
-                <td>{pct(m.availability)}</td>
-                <td>{pct(m.performance)}</td>
-                <td>{pct(m.quality)}</td>
-                <td style={{ color: 'var(--red)' }}>{m.unplanned_stop_h.toFixed(1)} sa</td>
+                <td style={{ color: oeeColor(m.avg_oee_7d), fontWeight: 800 }}>%{m.avg_oee_7d}</td>
+                <td>%{m.availability}</td>
+                <td>%{m.performance}</td>
+                <td style={{ color: 'var(--red)' }}>{m.unplanned_h.toFixed(1)} sa</td>
+                <td><Sparkline values={m.oee_7d} /></td>
               </tr>
             ))}
-            {!fleet.machines.length && <tr><td colSpan={7} className="muted" style={{ padding: 20 }}>Bu gün için veri yok.</td></tr>}
           </tbody>
         </table>
       </Card>
 
-      <div className="section-title">Çapraz-Makine Alarm Örüntüleri</div>
+      {/* 4) Çapraz-Makine Alarm Örüntüleri + şiddet */}
+      <div className="section-title" style={{ marginTop: 24 }}>Çapraz-Makine Alarm Örüntüleri</div>
       <Card title="Birden Fazla Makinede Görülen Alarmlar" noPad>
         <table className="atable">
-          <thead><tr><th>Alarm</th><th>Makine Sayısı</th><th>Toplam</th><th>Makineler</th></tr></thead>
+          <thead><tr><th>Alarm</th><th>Şiddet</th><th>Makine Sayısı</th><th>Toplam</th><th>Makineler</th></tr></thead>
           <tbody>
-            {(patterns?.items || []).map((p, i) => (
+            {(pat?.items || []).map((p, i) => (
               <tr key={i}>
                 <td><span className="alink">{p.message}</span></td>
+                <td><span className={`badge ${p.severity === 'Kritik' ? 'bad' : 'warn'}`}>{p.severity}</span></td>
                 <td><span className="badge warn">{p.machine_count}</span></td>
                 <td>{p.total}</td>
                 <td className="muted small">{p.machines.join(', ')}</td>
               </tr>
             ))}
-            {patterns && !patterns.items.length && (
-              <tr><td colSpan={4} className="muted" style={{ padding: 20 }}>Birden fazla makinede ortak alarm bulunamadı.</td></tr>
+            {pat && !pat.items.length && (
+              <tr><td colSpan={5} className="muted" style={{ padding: 20 }}>Birden fazla makinede ortak alarm yok.</td></tr>
             )}
           </tbody>
         </table>

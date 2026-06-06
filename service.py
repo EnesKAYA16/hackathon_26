@@ -646,29 +646,79 @@ def get_deviation(machine: str, center: str, signal: str = "CYCLE_TIME_MS",
 # FİLO (çapraz-makine, Platinum)
 # ---------------------------------------------------------------------------
 
-def fleet_overview(date: str) -> dict:
-    """Tüm etkin makinelerin o gündeki OEE/A/plansız özetini OEE'ye göre sıralar."""
-    rows = []
-    for m in list_machines():
-        if not m["is_enabled"]:
-            continue
+def _oee_7d_values(oee_df, unit_uid: str, date: str) -> list:
+    """Bir makinenin <= gün olan son 7 vardiya günü OEE değeri (% , GERÇEK)."""
+    target = pd.Timestamp(date).date()
+    m = oee_df[(oee_df["level"] == 1) & (oee_df["unit_uid"] == unit_uid)]
+    m = m[m["trans_date"].dt.date <= target].sort_values("trans_date").tail(7)
+    return [round(float(r.oee) * 100, 2) for r in m.itertuples(index=False)]
+
+
+_CRIT_KEYS = ("EMERGENCY", "FAILED", "OVERLOAD", "PRESSURE", "FIRE", "CHUCK", "SERVO", "DOOR")
+
+
+def _alarm_severity(msg: str) -> str:
+    """Alarm metnine göre şiddet sınıfı (gerçek metinden türetilir, uydurma değil)."""
+    u = str(msg).upper()
+    return "Kritik" if any(k in u for k in _CRIT_KEYS) else "Uyarı"
+
+
+def fleet_dashboard(date: str) -> dict:
+    """
+    Tüm tesisin kuş bakışı yönetim merkezi — TAMAMEN GERÇEK dataset verisi.
+
+    KPI: filonun ort. OEE (7g ort.), aktif çalışan makine, toplam günlük üretim.
+    machines: durum matrisi (status/oee/iş emri/alarm).
+    board: öncelik panosu (7-günlük GERÇEK ortalama OEE + sparkline; tek-gün %0 yerine).
+    """
+    machines = [m for m in list_machines() if m["is_enabled"]]
+    oee_df = repository.oee_summary()
+    wo = repository.workorders()
+    al = repository.alerts()
+    cstart, cend = _calendar_window(date)
+    tdate = pd.Timestamp(date).date()
+
+    rows, total_prod, active, avg_list = [], 0, 0, []
+    for m in machines:
+        uid, name = m["unit_uid"], m["name"]
         try:
-            b = get_baseline(m["name"], date)
+            b = get_baseline(name, date)
+            oee = b["oee"] * 100
+            A = b["availability"]["A"] * 100
+            P = b["performance"]["P"] * 100
+            produced = b["quality"]["product_sum"]
+            unplanned_h = b["availability"]["unplanned_stop_h"]
         except ValueError:
-            continue  # o gün veri yok
+            oee = A = P = 0.0
+            produced, unplanned_h = 0, 0.0
+        status = "running" if A > 0 else "stopped"
+        active += 1 if status == "running" else 0
+        total_prod += produced
+        wcount = int(len(wo[(wo["unit_uid"] == uid) & (wo["started_on"] >= cstart) & (wo["started_on"] < cend)]))
+        acount = int(len(al[(al["unit_uid"] == uid) & (al["started_on"].dt.date == tdate)]))
+        spark = _oee_7d_values(oee_df, uid, date)
+        avg7 = round(sum(spark) / len(spark), 2) if spark else round(oee, 2)
+        avg_list.append(avg7)
         rows.append({
-            "machine": m["name"], "unit_uid": m["unit_uid"],
-            "oee": b["oee"], "availability": b["availability"]["A"],
-            "performance": b["performance"]["P"], "quality": b["quality"]["Q"],
-            "unplanned_stop_ms": b["availability"]["unplanned_stop_ms"],
-            "unplanned_stop_h": b["availability"]["unplanned_stop_h"],
+            "machine": name, "unit_uid": uid,
+            "oee": round(oee, 2), "availability": round(A, 2), "performance": round(P, 2),
+            "produced": int(produced), "unplanned_h": round(unplanned_h, 2),
+            "status": status, "workorders": wcount, "alarms": acount,
+            "oee_7d": spark, "avg_oee_7d": avg7,
         })
-    rows.sort(key=lambda r: r["oee"])  # en kötü OEE üstte (öncelik)
-    return {"date": date, "count": len(rows), "machines": rows}
+
+    board = sorted(rows, key=lambda r: r["avg_oee_7d"])  # en kötü 7g ortalama üstte
+    avg_oee = round(sum(avg_list) / len(avg_list), 2) if avg_list else 0.0
+    return {
+        "date": date,
+        "kpi": {"avg_oee": avg_oee, "active": active, "total": len(machines),
+                "total_production": int(total_prod)},
+        "machines": rows, "board": board,
+    }
 
 
 def fleet_alarm_patterns(min_machines: int = 2, top_n: int = 15) -> dict:
-    """Birden fazla makinede görülen ortak alarm örüntüleri (filo geneli)."""
+    """Birden fazla makinede görülen ortak alarm örüntüleri + şiddet etiketi."""
     al = repository.alerts()
     units = core.load_units().set_index("uid")["name"].to_dict()
     g = al.groupby("message").agg(
@@ -680,6 +730,7 @@ def fleet_alarm_patterns(min_machines: int = 2, top_n: int = 15) -> dict:
         ["machine_count", "total"], ascending=False).head(top_n)
     items = [{
         "message": _native(r.message),
+        "severity": _alarm_severity(r.message),
         "total": _native(r.total),
         "machine_count": _native(r.machine_count),
         "machines": [units.get(u, u) for u in r.machines],

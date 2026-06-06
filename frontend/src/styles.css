@@ -344,3 +344,19 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 5px; cur
   color: #8a5a12; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; line-height: 1.5;
   white-space: pre-wrap; word-break: break-word; }
 [data-theme="dark"] .ai-note { color: #e0a23a; border-color: #5a4520; }
+
+/* ===== Filo: Makine Durum Matrisi ===== */
+.mx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 13px; }
+.mx-card { background: var(--panel); border: 1px solid var(--border); border-top: 3px solid var(--muted);
+  border-radius: 12px; padding: 13px 15px; box-shadow: var(--shadow); }
+.mx-card.running { border-top-color: var(--green); }
+.mx-card.stopped { border-top-color: var(--red); }
+.mx-top { display: flex; align-items: center; justify-content: space-between; }
+.mx-name { font-weight: 800; font-size: 15px; }
+.mx-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.mx-card.running .mx-badge { background: var(--green-soft); color: var(--green); }
+.mx-card.stopped .mx-badge { background: var(--red-soft); color: var(--red); }
+.mx-oee { font-size: 27px; font-weight: 800; line-height: 1; margin-top: 10px; }
+.mx-oee-l { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.mx-meta { display: flex; gap: 14px; margin-top: 11px; color: var(--muted); font-size: 12px; }
+.mx-meta span { display: inline-flex; align-items: center; gap: 5px; }

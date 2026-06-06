@@ -58,7 +58,8 @@ function Top3({ date }) {
   const [rows, setRows] = useState(null)
   useEffect(() => {
     if (!date) return
-    api.fleetOverview(date)
+    // fleetDashboard machines.oee YÜZDE (örn. 3.12) döner.
+    api.fleetDashboard(date)
       .then((f) => setRows([...f.machines].sort((a, b) => b.oee - a.oee).slice(0, 3)))
       .catch(() => setRows([]))
   }, [date])
@@ -71,7 +72,7 @@ function Top3({ date }) {
         <div className="top3-row" key={m.unit_uid}>
           <span className="top3-rk" style={{ background: medal[i] }}>{i + 1}</span>
           <span className="top3-nm">{m.machine}</span>
-          <span className="top3-oee" style={{ color: color(m.oee) }}>{pct(m.oee)}</span>
+          <span className="top3-oee" style={{ color: color(m.oee / 100) }}>%{m.oee}</span>
         </div>
       ))}
     </div>

@@ -252,7 +252,7 @@ def root():
                           "/rca/alerts", "/rca/alert-pareto",
                           "/rca/timeline", "/rca/root-cause", "/rca/deviation",
                           "/workorders", "/stock",
-                          "/fleet/overview", "/fleet/alarm-patterns"]}
+                          "/fleet/dashboard", "/fleet/alarm-patterns"]}
 
 
 @app.get("/machines", response_model=list[MachineOut], tags=["catalog"])
@@ -405,10 +405,10 @@ def rca_deviation(machine: str = Query(examples=["Makine 1"]),
     return _guard(lambda: service.get_deviation(machine, center, signal, window_min))
 
 
-@app.get("/fleet/overview", tags=["fleet"])
-def fleet_overview(date: str = Query(examples=["2025-11-10"])):
-    """Tüm makinelerin o gündeki OEE/A özetini (en kötü üstte) sıralar."""
-    return _guard(lambda: service.fleet_overview(date))
+@app.get("/fleet/dashboard", tags=["fleet"])
+def fleet_dashboard(date: str = Query(examples=["2025-11-10"])):
+    """Tüm tesis kuş bakışı: KPI + makine durum matrisi + öncelik panosu (7g trend)."""
+    return _guard(lambda: service.fleet_dashboard(date))
 
 
 @app.get("/fleet/alarm-patterns", tags=["fleet"])

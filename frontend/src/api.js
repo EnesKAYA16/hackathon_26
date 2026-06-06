@@ -48,7 +48,7 @@ export const api = {
   workorders: (m, d) => get(`/workorders?machine=${q(m)}&date=${d}`),
   stock: (m, start, end) => get(`/stock?machine=${q(m)}&start=${start}${end ? `&end=${end}` : ''}`),
   deviation: (m, center, signal) => get(`/rca/deviation?machine=${q(m)}&center=${q(center)}${signal ? `&signal=${q(signal)}` : ''}`),
-  fleetOverview: (d) => get(`/fleet/overview?date=${d}`),
+  fleetDashboard: (d) => get(`/fleet/dashboard?date=${d}`),
   fleetAlarmPatterns: () => get('/fleet/alarm-patterns'),
 }
 

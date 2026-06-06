@@ -122,12 +122,14 @@ export default function App() {
         <main className="content">
           {/* Ortalanmış: makine seçici + tarih aralığı takvimi */}
           <div className="topcenter">
-            <div className="field">
-              <Factory size={17} className="ic" />
-              <select value={machine} onChange={(e) => setMachine(e.target.value)}>
-                {machines.map((m) => <option key={m.unit_uid} value={m.name}>{m.name}</option>)}
-              </select>
-            </div>
+            {tab !== 'fleet' && (
+              <div className="field">
+                <Factory size={17} className="ic" />
+                <select value={machine} onChange={(e) => setMachine(e.target.value)}>
+                  {machines.map((m) => <option key={m.unit_uid} value={m.name}>{m.name}</option>)}
+                </select>
+              </div>
+            )}
             {tab === 'home' ? (
               <DateRangePicker availableDates={dates} start={range.start} end={range.end}
                 onChange={(r) => { setRange(r); setDate(resolveDay(r.end || r.start)) }} />
