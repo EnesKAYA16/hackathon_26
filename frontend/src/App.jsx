@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Home, Pause, ClipboardList, Package, Bell, LayoutGrid,
-  Search, Languages, Sun, Moon, User, Factory, Calendar, Gauge,
+  Sun, Moon, Factory, Calendar, Gauge, PanelLeft,
 } from 'lucide-react'
 import { api } from './api.js'
 import HomeView from './components/HomeView.jsx'
@@ -11,6 +11,8 @@ import AlarmlarView from './components/AlarmlarView.jsx'
 import WorkOrdersView from './components/WorkOrdersView.jsx'
 import StockView from './components/StockView.jsx'
 import FleetView from './components/FleetView.jsx'
+import StoppageTrendChart from './components/StoppageTrendChart.jsx'
+import OeeTrendChart from './components/OeeTrendChart.jsx'
 
 const TABS = [
   { id: 'home', label: 'Ana Sayfa', Icon: Home },
@@ -41,6 +43,9 @@ export default function App() {
     localStorage.setItem('theme', theme)
   }, [theme])
   const dark = theme === 'dark'
+
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar') === '1')
+  useEffect(() => { localStorage.setItem('sidebar', collapsed ? '1' : '0') }, [collapsed])
 
   useEffect(() => {
     api.machines().then((ms) => {
@@ -75,69 +80,79 @@ export default function App() {
   const showDatePill = tab !== 'alarmlar'
 
   return (
-    <>
+    <div className={`shell ${collapsed ? 'collapsed' : ''}`}>
       <header className="tc-header">
+        <button className="tc-ico-btn" title="Menüyü aç/kapat" onClick={() => setCollapsed((c) => !c)}>
+          <PanelLeft size={18} />
+        </button>
         <div className="tc-logo"><Gauge className="mark" size={24} /><span className="t1">OEE</span><span className="t2">Panosu</span></div>
-        <div className="tc-head-right">
-          <div className="tc-search"><Search size={15} /> <span>Ara…</span><span className="kbd">CTRL K</span></div>
-          <span className="tc-ico"><Languages size={16} /> TR</span>
-          <button className="tc-ico-btn" title="Tema değiştir" onClick={() => setTheme(dark ? 'light' : 'dark')}>
-            {dark ? <Moon size={17} /> : <Sun size={17} />}
-          </button>
-          <span className="tc-ico"><User size={16} /> admin</span>
-        </div>
+        <div style={{ flex: 1 }} />
+        <button className="tc-ico-btn" title="Tema değiştir" onClick={() => setTheme(dark ? 'light' : 'dark')}>
+          {dark ? <Moon size={18} /> : <Sun size={18} />}
+        </button>
       </header>
 
-      <div className="tc-toolbar">
-        <div className="field">
-          <Factory size={17} className="ic" />
-          <select value={machine} onChange={(e) => setMachine(e.target.value)}>
-            {machines.map((m) => <option key={m.unit_uid} value={m.name}>{m.name}</option>)}
-          </select>
-        </div>
-        <div className="tc-tabs">
-          {TABS.map((t) => (
-            <button key={t.id} className={`tc-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
-              <t.Icon size={16} />{t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <div className="body">
+        <aside className="sidebar">
+          <div className="side-machine" title="Makine seç">
+            <Factory size={18} className="ic" />
+            <select value={machine} onChange={(e) => setMachine(e.target.value)}>
+              {machines.map((m) => <option key={m.unit_uid} value={m.name}>{m.name}</option>)}
+            </select>
+          </div>
+          <nav className="side-nav">
+            {TABS.map((t) => (
+              <button key={t.id} title={t.label}
+                      className={`side-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+                <t.Icon size={18} /><span className="side-label">{t.label}</span>
+              </button>
+            ))}
+          </nav>
+        </aside>
 
-      <div className="app">
-        {showDatePill && (
-          <div className="center">
-            <div className="datepill">
-              <div className="dt"><Calendar size={16} />
-                <select value={date} onChange={(e) => setDate(e.target.value)}
-                        style={{ border: 'none', boxShadow: 'none', fontWeight: 700, padding: '2px 4px' }}>
-                  {dates.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
+        <main className="content">
+          {showDatePill && (
+            <div className="center">
+              <div className="datepill">
+                <div className="dt"><Calendar size={16} />
+                  <select value={date} onChange={(e) => setDate(e.target.value)}
+                          style={{ border: 'none', boxShadow: 'none', fontWeight: 700, padding: '2px 4px' }}>
+                    {dates.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div className="rf">SON YENİLEME<br />{refreshedAt || '—'}</div>
+                {loading && <span className="muted small">yükleniyor…</span>}
               </div>
-              <div className="rf">SON YENİLEME<br />{refreshedAt || '—'}</div>
-              {loading && <span className="muted small">yükleniyor…</span>}
             </div>
-          </div>
-        )}
+          )}
 
-        {err && <div className="err" style={{ marginBottom: 16 }}>{err}</div>}
+          {err && <div className="err" style={{ marginBottom: 16 }}>{err}</div>}
 
-        {tab === 'home' && <HomeView baseline={baseline} dark={dark} onGoStoppages={() => setTab('duruslar')} />}
-        {tab === 'duruslar' && (
-          <div className="grid cols-2">
-            <ParetoChart data={pareto} dark={dark} />
-            <WhatIfPanel machine={machine} date={date} reasons={reasons} dark={dark} />
-          </div>
-        )}
-        {tab === 'workorders' && <WorkOrdersView machine={machine} date={date} />}
-        {tab === 'stock' && <StockView machine={machine} date={date} />}
-        {tab === 'alarmlar' && <AlarmlarView machine={machine} alarmDates={alarmDates} />}
-        {tab === 'fleet' && <FleetView date={date} />}
+          {tab === 'home' && (
+            <>
+              <HomeView baseline={baseline} dark={dark} onGoStoppages={() => setTab('duruslar')} />
+              <div style={{ marginTop: 18 }}><OeeTrendChart machine={machine} dark={dark} /></div>
+            </>
+          )}
+          {tab === 'duruslar' && (
+            <>
+              <StoppageTrendChart machine={machine} date={date} dark={dark} />
+              <div className="grid cols-2" style={{ marginTop: 18 }}>
+                <ParetoChart data={pareto} dark={dark} />
+                <WhatIfPanel machine={machine} date={date} reasons={reasons} dark={dark} />
+              </div>
+            </>
+          )}
+          {tab === 'workorders' && <WorkOrdersView machine={machine} date={date} />}
+          {tab === 'stock' && <StockView machine={machine} date={date} />}
+          {tab === 'alarmlar' && <AlarmlarView machine={machine} alarmDates={alarmDates} />}
+          {tab === 'fleet' && <FleetView date={date} />}
 
-        <footer className="small muted" style={{ marginTop: 28, textAlign: 'center' }}>
-          OEE What-If & Kök Neden · RCA → What-If → ROI
-        </footer>
+          <footer className="small muted" style={{ marginTop: 28, textAlign: 'center' }}>
+            OEE What-If & Kök Neden · RCA → What-If → ROI
+          </footer>
+        </main>
       </div>
-    </>
+    </div>
   )
 }

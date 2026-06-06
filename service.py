@@ -130,6 +130,45 @@ def get_baseline(machine: str, date: str) -> dict:
 # Pareto (en çok süre kaybettiren plansız duruşlar)
 # ---------------------------------------------------------------------------
 
+def stoppage_trend(machine: str, date: str) -> dict:
+    """Vardiya günü boyunca saatlik planlı/plansız duruş süresi (zaman serisi, slayt 005)."""
+    unit_uid = _resolve(machine)
+    s = repository.stoppage_slices()
+    start, end = _shift_window(date)
+    m = s[(s["unit_uid"] == unit_uid) & (s["started_on"] >= start) & (s["started_on"] < end)
+          & (~s["exclude_from_oee"]) & (~s["is_test_prod"])].copy()
+    m["bucket"] = m["started_on"].dt.floor("h")
+
+    base = start.floor("h")
+    buckets = []
+    for i in range(24):
+        b = base + pd.Timedelta(hours=i)
+        sub = m[m["bucket"] == b]
+        planned = float(sub.loc[sub["is_planned"] == True, "duration_milliseconds"].sum())   # noqa: E712
+        unplanned = float(sub.loc[sub["is_planned"] == False, "duration_milliseconds"].sum())  # noqa: E712
+        buckets.append({"hour": b.strftime("%H:%M"),
+                        "planned_h": planned / 3_600_000, "unplanned_h": unplanned / 3_600_000})
+    return {"machine": machine, "unit_uid": unit_uid, "date": date, "buckets": buckets}
+
+
+def oee_trend(machine: str, days: int = 30) -> dict:
+    """Bir makinenin son N vardiya günü OEE/A/P trendi (baseline karşılaştırma, slayt 'Shift Comparison')."""
+    unit_uid = _resolve(machine)
+    o = repository.oee_summary()
+    m = o[(o["level"] == 1) & (o["unit_uid"] == unit_uid)].sort_values("trans_date").tail(days)
+    points = []
+    for r in m.itertuples(index=False):
+        a = core.safe_json(r.availability)
+        p = core.safe_json(r.performance)
+        points.append({
+            "date": r.trans_date.date().isoformat(),
+            "oee": float(r.oee) * 100,
+            "availability": float(a.get("A", 0)) * 100,
+            "performance": float(p.get("P", 0)) * 100,
+        })
+    return {"machine": machine, "unit_uid": unit_uid, "count": len(points), "points": points}
+
+
 def get_pareto(machine: str, date: str, top_n: int = 5) -> dict:
     """En çok süre kaybettiren ilk N plansız duruş nedeni (JSON-güvenli)."""
     unit_uid = _resolve(machine)

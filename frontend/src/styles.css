@@ -29,8 +29,8 @@ body {
   backdrop-filter: blur(12px) saturate(160%);
   -webkit-backdrop-filter: blur(12px) saturate(160%);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 22px; position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 18px; position: sticky; top: 0; z-index: 30;
 }
 .tc-logo { display: flex; align-items: center; gap: 9px; font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
 .tc-logo .mark { color: var(--accent); }
@@ -223,3 +223,38 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 5px; cur
 .apq { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .apq-cell { background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
   padding: 10px; text-align: center; }
+
+/* ===== Layout: üst header + sol açılır-kapanır sidebar ===== */
+.body { display: flex; align-items: flex-start; }
+
+.sidebar {
+  width: 232px; flex-shrink: 0;
+  background: var(--glass);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border-right: 1px solid var(--border);
+  position: sticky; top: 54px; height: calc(100vh - 54px);
+  padding: 16px 12px; overflow-y: auto;
+  transition: width .2s ease;
+}
+.shell.collapsed .sidebar { width: 66px; }
+
+.side-machine { display: flex; align-items: center; gap: 8px; padding: 4px 6px 14px;
+  border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.side-machine .ic { color: var(--accent); flex-shrink: 0; }
+.side-machine select { width: 100%; min-width: 0; }
+.shell.collapsed .side-machine { justify-content: center; padding: 4px 0 14px; }
+.shell.collapsed .side-machine select { display: none; }
+
+.side-nav { display: flex; flex-direction: column; gap: 4px; }
+.side-tab { display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 12px; border-radius: 10px; border: none; background: none;
+  color: var(--muted); font-weight: 600; font-size: 14px; cursor: pointer;
+  text-align: left; white-space: nowrap; overflow: hidden; }
+.side-tab svg { flex-shrink: 0; }
+.side-tab:hover { background: var(--panel2); color: var(--text); }
+.side-tab.active { background: var(--accent-soft); color: var(--accent); }
+.shell.collapsed .side-tab { justify-content: center; padding: 10px 0; }
+.shell.collapsed .side-label { display: none; }
+
+.content { flex: 1; min-width: 0; padding: 22px; }
