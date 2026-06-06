@@ -34,6 +34,8 @@ export const api = {
   baseline: (m, d) => get(`/oee/baseline?machine=${q(m)}&date=${d}`),
   pareto: (m, d, n = 5) => get(`/oee/pareto?machine=${q(m)}&date=${d}&top_n=${n}`),
   stoppageTrend: (m, d) => get(`/oee/stoppage-trend?machine=${q(m)}&date=${d}`),
+  stoppageKpis: (m, d) => get(`/oee/stoppage-kpis?machine=${q(m)}&date=${d}`),
+  oeeHourlyTrend: (m, d) => get(`/oee/hourly-trend?machine=${q(m)}&date=${d}`),
   oeeTrend: (m, { start, end, days = 30 } = {}) =>
     get(`/oee/trend?machine=${q(m)}` + (start && end ? `&start=${start}&end=${end}` : `&days=${days}`)),
   counterTrend: (m, d) => get(`/oee/counter-trend?machine=${q(m)}&date=${d}`),
@@ -42,8 +44,9 @@ export const api = {
   alerts: (m, d) => get(`/rca/alerts?machine=${q(m)}${d ? `&date=${d}` : ''}`),
   alertPareto: (m, n = 10) => get(`/rca/alert-pareto?machine=${q(m)}&top_n=${n}`),
   rootCause: (m, d, w) => get(`/rca/root-cause?machine=${q(m)}&date=${d}${w ? `&window_min=${w}` : ''}`),
+  analyzeRootCause: (m, d) => post(`/rca/analyze?machine=${q(m)}&date=${d}`, {}),
   workorders: (m, d) => get(`/workorders?machine=${q(m)}&date=${d}`),
-  stock: (m, d) => get(`/stock?machine=${q(m)}&date=${d}`),
+  stock: (m, start, end) => get(`/stock?machine=${q(m)}&start=${start}${end ? `&end=${end}` : ''}`),
   deviation: (m, center, signal) => get(`/rca/deviation?machine=${q(m)}&center=${q(center)}${signal ? `&signal=${q(signal)}` : ''}`),
   fleetOverview: (d) => get(`/fleet/overview?date=${d}`),
   fleetAlarmPatterns: () => get('/fleet/alarm-patterns'),
@@ -55,3 +58,12 @@ export const fmtHM = (ms) => {
   return `${Math.floor(min / 60)}s ${min % 60}d`
 }
 export const pct = (x) => `${(x * 100).toFixed(2)}%`
+
+// Çevrim/kısa süreler için saniye hassasiyetli format (örn. 8sn, 1d 30sn, 1s 3d).
+export const fmtCycle = (ms) => {
+  if (ms == null) return '—'
+  const s = Math.round(ms / 1000)
+  if (s >= 3600) return `${Math.floor(s / 3600)}s ${Math.round((s % 3600) / 60)}d`
+  if (s >= 60) return `${Math.floor(s / 60)}d ${s % 60}sn`
+  return `${s}sn`
+}

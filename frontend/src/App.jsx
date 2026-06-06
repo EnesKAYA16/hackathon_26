@@ -12,6 +12,7 @@ import WorkOrdersView from './components/WorkOrdersView.jsx'
 import StockView from './components/StockView.jsx'
 import FleetView from './components/FleetView.jsx'
 import StoppageTrendChart from './components/StoppageTrendChart.jsx'
+import StoppageKpiCards from './components/StoppageKpiCards.jsx'
 import OeeTrendChart from './components/OeeTrendChart.jsx'
 import DateRangePicker from './components/DateRangePicker.jsx'
 
@@ -28,7 +29,9 @@ export default function App() {
   const [machines, setMachines] = useState([])
   const [machine, setMachine] = useState('')
   const [dates, setDates] = useState([])
-  const [range, setRange] = useState({ start: '', end: '' })
+  const [range, setRange] = useState({ start: '', end: '' })  // ana sayfa OEE trendi için
+  const [date, setDate] = useState('')                         // Duruşlar/İş Emirleri: tek aktif gün
+  const [stockRange, setStockRange] = useState({ start: '', end: '' })  // Stok: tarih aralığı
   const [tab, setTab] = useState('home')
 
   const [baseline, setBaseline] = useState(null)
@@ -47,12 +50,12 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar') === '1')
   useEffect(() => { localStorage.setItem('sidebar', collapsed ? '1' : '0') }, [collapsed])
 
-  // Tekil-gün görünümleri: aralık bitişi <= en son VERİ günü (verisiz uca denk gelirse bozulmasın)
-  const date = useMemo(() => {
-    if (!dates.length) return range.end
-    const within = dates.filter((d) => d <= range.end)
+  // Bir sınıra göre <= olan en son VERİ gününü çözer (verisiz uca denk gelirse bozulmasın)
+  const resolveDay = (bound) => {
+    if (!dates.length || !bound) return bound
+    const within = dates.filter((d) => d <= bound)
     return within.length ? within[within.length - 1] : dates[0]
-  }, [dates, range.end])
+  }
 
   useEffect(() => {
     api.machines().then((ms) => {
@@ -70,6 +73,9 @@ export default function App() {
       const endIdx = ds.indexOf(end)
       const start = ds[Math.max(0, endIdx - 29)] || end
       setRange({ start, end })
+      setDate(end)
+      // Stok: varsayılan 2 günlük aralık (gün + sonraki gün) — boş bitiş gösterilmez
+      setStockRange({ start: end, end: ds[Math.min(ds.length - 1, endIdx + 1)] || end })
     }).catch((e) => setErr(e.message))
     api.alerts(machine).then((res) => {
       const uniq = [...new Set(res.alerts.map((a) => a.started_on.slice(0, 10)))].sort()
@@ -80,7 +86,7 @@ export default function App() {
   useEffect(() => {
     if (!machine || !date) return
     setLoading(true); setErr(null)
-    Promise.all([api.baseline(machine, date), api.pareto(machine, date, 5)])
+    Promise.all([api.baseline(machine, date), api.pareto(machine, date, 6)])
       .then(([b, p]) => { setBaseline(b); setPareto(p) })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false))
@@ -122,7 +128,16 @@ export default function App() {
                 {machines.map((m) => <option key={m.unit_uid} value={m.name}>{m.name}</option>)}
               </select>
             </div>
-            <DateRangePicker availableDates={dates} start={range.start} end={range.end} onChange={setRange} />
+            {tab === 'home' ? (
+              <DateRangePicker availableDates={dates} start={range.start} end={range.end}
+                onChange={(r) => { setRange(r); setDate(resolveDay(r.end || r.start)) }} />
+            ) : tab === 'stock' ? (
+              <DateRangePicker availableDates={dates} start={stockRange.start} end={stockRange.end}
+                onChange={(r) => setStockRange({ start: r.start, end: r.end || r.start })} />
+            ) : tab !== 'alarmlar' ? (
+              <DateRangePicker single availableDates={dates} start={date} end={date}
+                onChange={(r) => setDate(r.end)} />
+            ) : null}
             {loading && <span className="muted small">yükleniyor…</span>}
           </div>
 
@@ -138,7 +153,10 @@ export default function App() {
           )}
           {tab === 'duruslar' && (
             <>
-              <StoppageTrendChart machine={machine} date={date} dark={dark} />
+              <StoppageKpiCards machine={machine} date={date} />
+              <div style={{ marginTop: 18 }}>
+                <StoppageTrendChart machine={machine} date={date} dark={dark} />
+              </div>
               <div className="grid cols-2" style={{ marginTop: 18 }}>
                 <ParetoChart data={pareto} dark={dark} />
                 <WhatIfPanel machine={machine} date={date} reasons={reasons} dark={dark} />
@@ -146,7 +164,7 @@ export default function App() {
             </>
           )}
           {tab === 'workorders' && <WorkOrdersView machine={machine} date={date} />}
-          {tab === 'stock' && <StockView machine={machine} date={date} dark={dark} />}
+          {tab === 'stock' && <StockView machine={machine} start={stockRange.start} end={stockRange.end} dark={dark} />}
           {tab === 'alarmlar' && <AlarmlarView machine={machine} alarmDates={alarmDates} />}
           {tab === 'fleet' && <FleetView date={date} />}
 

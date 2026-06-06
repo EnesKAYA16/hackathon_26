@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     currency: str = "₺"
     rca_window_minutes: int = 15  # RCA zaman çizelgesi penceresi (±dakika)
 
+    # Gemini (Google) — AI kök neden analizi. Anahtar SADECE .env'den okunur (kodda yok).
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+
     @field_validator("data_dir")
     @classmethod
     def _resolve_data_dir(cls, v: Path) -> Path:

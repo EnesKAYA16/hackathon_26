@@ -247,6 +247,7 @@ def root():
             "endpoints": ["/machines", "/machines/{machine}/dates",
                           "/oee/baseline", "/oee/pareto", "/oee/whatif",
                           "/oee/stoppage-trend", "/oee/trend", "/oee/counter-trend",
+                          "/oee/hourly-trend", "/oee/stoppage-kpis",
                           "/finance/assumptions",
                           "/rca/alerts", "/rca/alert-pareto",
                           "/rca/timeline", "/rca/root-cause", "/rca/deviation",
@@ -310,6 +311,20 @@ def counter_trend(machine: str = Query(examples=["Makine 1"]),
     return _guard(lambda: service.counter_trend(machine, date))
 
 
+@app.get("/oee/hourly-trend", tags=["oee"])
+def hourly_trend(machine: str = Query(examples=["Makine 1"]),
+                 date: str = Query(examples=["2025-11-10"])):
+    """Tek gün için saatlik OEE/Availability/Performans trendi."""
+    return _guard(lambda: service.oee_hourly_trend(machine, date))
+
+
+@app.get("/oee/stoppage-kpis", tags=["oee"])
+def stoppage_kpis(machine: str = Query(examples=["Makine 1"]),
+                  date: str = Query(examples=["2025-11-10"])):
+    """Duruşlar özet KPI'ları: toplam duruş, plansız oran, MTBF, MTTR."""
+    return _guard(lambda: service.stoppage_kpis(machine, date))
+
+
 @app.post("/oee/whatif", response_model=WhatIfOut, tags=["oee"])
 def whatif(req: WhatIfRequest):
     """Bir duruş nedenini X% azaltmanın OEE + finansal (ROI) etkisini simüle eder."""
@@ -354,6 +369,14 @@ def rca_root_cause(machine: str = Query(examples=["Makine 1"]),
     return _guard(lambda: service.get_root_cause(machine, date, window_min))
 
 
+@app.post("/rca/analyze", tags=["rca"])
+def rca_analyze(machine: str = Query(examples=["Makine 1"]),
+                date: str = Query(examples=["2026-01-12"]),
+                window_min: int | None = Query(default=None, ge=1, le=240)):
+    """Kök neden verisini Gemini Flash'a gönderip detaylı AI analizi döndürür."""
+    return _guard(lambda: service.analyze_root_cause(machine, date, window_min))
+
+
 # ---------------------------------------------------------------------------
 # İş emirleri & Stok
 # ---------------------------------------------------------------------------
@@ -367,9 +390,10 @@ def workorders(machine: str = Query(examples=["Makine 1"]),
 
 @app.get("/stock", tags=["workorder"])
 def stock(machine: str = Query(examples=["Makine 1"]),
-          date: str = Query(examples=["2025-11-10"])):
-    """Vardiya günündeki iş emirlerinin program (order_no) bazında stok özeti."""
-    return _guard(lambda: service.stock_summary(machine, date))
+          start: str = Query(examples=["2025-11-16"]),
+          end: str | None = Query(default=None, examples=["2025-11-17"])):
+    """Stok / program özeti (tarih aralığı, tutarlı dummy üretim metrikleri)."""
+    return _guard(lambda: service.stock_summary(machine, start, end))
 
 
 @app.get("/rca/deviation", tags=["rca"])

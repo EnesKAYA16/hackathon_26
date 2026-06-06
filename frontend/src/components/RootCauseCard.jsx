@@ -1,10 +1,29 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Activity, PauseCircle, Ban, Lightbulb, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Activity, PauseCircle, Ban, Lightbulb, TrendingUp, Sparkles } from 'lucide-react'
 import { api, fmtHM } from '../api.js'
 import Card from './Card.jsx'
 
 const time = (iso) => (iso ? new Date(iso).toLocaleTimeString('tr-TR', { hour12: false }) : '')
 const likeClass = (l) => (l === 'Yüksek' ? 'good' : l === 'Orta' ? 'warn' : 'bad')
+
+// Basit markdown render (## başlık, - madde, **kalın**) — güvenli (HTML yok).
+function bold(s) {
+  return s.split('**').map((p, i) => (i % 2 ? <b key={i}>{p}</b> : p))
+}
+function MdLite({ text }) {
+  return (
+    <div className="ai-md">
+      {text.split('\n').map((ln, i) => {
+        const t = ln.trim()
+        if (!t) return <div key={i} style={{ height: 6 }} />
+        if (t.startsWith('## ')) return <div key={i} className="ai-h">{t.slice(3)}</div>
+        if (t.startsWith('# ')) return <div key={i} className="ai-h">{t.slice(2)}</div>
+        if (t.startsWith('- ') || t.startsWith('* ')) return <div key={i} className="ai-li">• {bold(t.slice(2))}</div>
+        return <div key={i}>{bold(t)}</div>
+      })}
+    </div>
+  )
+}
 
 export default function RootCauseCard({ machine, alarmDates }) {
   const [date, setDate] = useState('')
@@ -12,12 +31,14 @@ export default function RootCauseCard({ machine, alarmDates }) {
   const [dev, setDev] = useState(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState(null)
+  const [ai, setAi] = useState(null)
+  const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => { if (alarmDates?.length) setDate((d) => d || alarmDates[0]) }, [alarmDates])
 
   useEffect(() => {
     if (!machine || !date) return
-    setLoading(true); setErr(null); setCard(null); setDev(null)
+    setLoading(true); setErr(null); setCard(null); setDev(null); setAi(null)
     api.rootCause(machine, date)
       .then((c) => {
         setCard(c)
@@ -27,6 +48,13 @@ export default function RootCauseCard({ machine, alarmDates }) {
       })
       .catch((e) => setErr(e.message)).finally(() => setLoading(false))
   }, [machine, date])
+
+  async function runAi() {
+    setAiLoading(true); setAi(null)
+    try { setAi(await api.analyzeRootCause(machine, date)) }
+    catch (e) { setAi({ analysis: `Analiz başarısız: ${e.message}`, source: 'error' }) }
+    finally { setAiLoading(false) }
+  }
 
   const dateSelect = (
     <select value={date} onChange={(e) => setDate(e.target.value)}>
@@ -51,6 +79,23 @@ export default function RootCauseCard({ machine, alarmDates }) {
               : <span className="badge warn">Telemetri: net duruş kanıtı yok</span>}
           </div>
           <p style={{ marginTop: 0 }}>{card.summary}</p>
+
+          {/* AI Detaylı Analiz (Gemini) */}
+          <div className="ai-box">
+            <div className="ai-bar">
+              <button className="ai-btn" onClick={runAi} disabled={aiLoading}>
+                <Sparkles size={16} />{aiLoading ? 'Analiz ediliyor…' : 'Yapay Zeka ile Detaylı Analiz'}
+              </button>
+              {ai && ai.source && (
+                <span className={`badge ${ai.source === 'gemini' ? 'good' : ai.source === 'error' ? 'bad' : 'warn'}`}>
+                  {ai.source === 'gemini' ? `Gemini · ${ai.model || ''}` : ai.source === 'error' ? 'Hata' : 'Yerel özet'}
+                </span>
+              )}
+            </div>
+            {aiLoading && <div className="spin">Gemini olay verisini analiz ediyor…</div>}
+            {ai && ai.note && <div className="ai-note">⚠️ {ai.note}</div>}
+            {ai && ai.analysis && <div className="ai-panel"><MdLite text={ai.analysis} /></div>}
+          </div>
 
           <div className="section-sub">Alarmlar (tekrar sayısı + öneri)</div>
           {card.alarms.map((a, i) => (

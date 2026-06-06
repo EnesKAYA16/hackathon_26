@@ -232,6 +232,7 @@ def simulate_whatif(unit_uid: str, target_date: str,
     reason_label = None
 
     if durus_nedeni:
+        # Gerçek duruş nedeni (event-log oransal payı).
         agg = get_unplanned_by_reason(unit_uid, target_date)
         slice_total = agg["total_ms"].sum()
         match = agg[agg["reason"].str.casefold() == durus_nedeni.casefold()]

@@ -7,9 +7,10 @@ const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 // Tarih ARALIĞI seçici. Verisi olmayan günler soluk + tıklanamaz.
-export default function DateRangePicker({ availableDates, start, end, onChange }) {
+export default function DateRangePicker({ availableDates, start, end, onChange, single = false }) {
   const avail = useMemo(() => new Set(availableDates), [availableDates])
   const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState(null)  // aralık seçiminde 1. tık (iç state)
   const [view, setView] = useState(() => new Date((end || availableDates?.[availableDates.length - 1] || iso(new Date())) + 'T00:00'))
   const ref = useRef(null)
 
@@ -19,29 +20,39 @@ export default function DateRangePicker({ availableDates, start, end, onChange }
     return () => document.removeEventListener('mousedown', h)
   }, [])
   useEffect(() => { if (end) setView(new Date(end + 'T00:00')) }, [end, open])
+  useEffect(() => { if (!open) setAnchor(null) }, [open])  // kapanınca seçimi sıfırla
 
   const y = view.getFullYear(), mo = view.getMonth()
   const startDow = (new Date(y, mo, 1).getDay() + 6) % 7
   const daysInMonth = new Date(y, mo + 1, 0).getDate()
   const cells = [...Array(startDow).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => new Date(y, mo, i + 1))]
 
-  const inRange = (s) => start && end && s > start && s < end
+  const inRange = (s) => !single && start && end && s > start && s < end
   const click = (d) => {
     const s = iso(d)
-    // Soluk (verisiz) günler de seçilebilir; sadece görsel olarak soluk.
-    if (!start || end) {
-      onChange({ start: s, end: null })            // 1. tık: yeni başlangıç (bitişi boşalt)
-    } else if (s >= start) {
-      onChange({ start, end: s }); setOpen(false)  // 2. tık: bitiş -> aralık tamam
+    if (single) {
+      if (!avail.has(s)) return                    // tek-gün: verisiz gün seçilemez
+      onChange({ start: s, end: s }); setOpen(false)
+      return
+    }
+    // Aralık modu — soluk (verisiz) günler de seçilebilir.
+    // Aralık modu — iç "anchor" ile (bitiş ASLA null olmaz -> '-> -' bug'ı yok).
+    if (anchor === null) {
+      setAnchor(s); onChange({ start: s, end: s })          // 1. tık: başlangıç (end=start)
+    } else if (s >= anchor) {
+      onChange({ start: anchor, end: s }); setAnchor(null); setOpen(false)  // 2. tık: tamam
     } else {
-      onChange({ start: s, end: null })            // başlangıçtan önce -> yeni başlangıç
+      setAnchor(s); onChange({ start: s, end: s })          // başlangıçtan önce -> yeni başlangıç
     }
   }
 
   return (
     <div className="rangepick" ref={ref}>
       <button className="rangepick-btn" onClick={() => setOpen((o) => !o)}>
-        <Calendar size={16} /> <b>{start || '—'}</b><span className="arr">→</span><b>{end || '—'}</b>
+        <Calendar size={16} />
+        {single
+          ? <b>{start || '—'}</b>
+          : <><b>{start || '—'}</b><span className="arr">→</span><b>{end || '—'}</b></>}
       </button>
       {open && (
         <div className="rangepick-pop">
@@ -56,11 +67,12 @@ export default function DateRangePicker({ availableDates, start, end, onChange }
               if (!d) return <div key={i} />
               const s = iso(d), has = avail.has(s)
               const cls = ['rp-day']
-              if (!has) cls.push('nodata')  // verisiz: soluk ama yine de seçilebilir
+              if (!has) cls.push('nodata')  // verisiz: soluk
               if (s === start || s === end) cls.push('sel')
               else if (inRange(s)) cls.push('inrange')
               return (
-                <button key={i} type="button" className={cls.join(' ')} onClick={() => click(d)}>
+                <button key={i} type="button" className={cls.join(' ')}
+                        disabled={single && !has} onClick={() => click(d)}>
                   {d.getDate()}
                 </button>
               )

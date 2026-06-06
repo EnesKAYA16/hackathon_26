@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, fmtHM } from '../api.js'
+import { api, fmtHM, fmtCycle } from '../api.js'
 import Card from './Card.jsx'
 
 const time = (iso) => (iso ? new Date(iso).toLocaleString('tr-TR', { hour12: false }) : '—')
@@ -37,7 +37,7 @@ export default function WorkOrdersView({ machine, date }) {
               <td className="t">{time(o.started_on)}</td>
               <td className="t">{time(o.ended_on)}</td>
               <td>{fmtHM(o.duration_ms)}</td>
-              <td>{o.stock_cycle_ms != null ? fmtHM(o.stock_cycle_ms) : '—'}</td>
+              <td>{fmtCycle(o.stock_cycle_ms)}</td>
               <td>{o.planned_quantity != null ? o.planned_quantity : '—'}</td>
             </tr>
           ))}

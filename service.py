@@ -17,11 +17,13 @@ import math
 import numpy as np
 import pandas as pd
 
+import ai
 import finance as fin
 import oee_baseline as core
 import oee_whatif as whatif
 import rca
 import repository
+from config import settings
 
 
 # ---------------------------------------------------------------------------
@@ -130,32 +132,115 @@ def get_baseline(machine: str, date: str) -> dict:
 # Pareto (en çok süre kaybettiren plansız duruşlar)
 # ---------------------------------------------------------------------------
 
-def stoppage_trend(machine: str, date: str) -> dict:
-    """Vardiya günü boyunca saatlik planlı/plansız duruş süresi (zaman serisi, slayt 005)."""
-    unit_uid = _resolve(machine)
+def _overlapping_stops(unit_uid: str, start, end):
+    """Pencereyle örtüşen, OEE'ye dahil duruş dilimleri."""
     s = repository.stoppage_slices()
-    start, end = _shift_window(date)
-    m = s[(s["unit_uid"] == unit_uid) & (s["started_on"] >= start) & (s["started_on"] < end)
-          & (~s["exclude_from_oee"]) & (~s["is_test_prod"])].copy()
-    m["bucket"] = m["started_on"].dt.floor("h")
+    return s[(s["unit_uid"] == unit_uid) & (s["started_on"] < end) & (s["ended_on"] > start)
+             & (~s["exclude_from_oee"]) & (~s["is_test_prod"])].copy()
 
+
+def _hour_clip_ms(sub, hb, he):
+    """Dilimlerin [hb, he) saat aralığına KIRPILMIŞ sürelerini ms olarak ekler."""
+    cs = sub["started_on"].clip(lower=hb)
+    ce = sub["ended_on"].clip(upper=he)
+    return ((ce - cs).dt.total_seconds() * 1000).clip(lower=0)
+
+
+def stoppage_trend(machine: str, date: str) -> dict:
+    """
+    Vardiya günü boyunca SAATLİK planlı/plansız duruş — DAKİKA cinsinden,
+    her saat aralığına KIRPILMIŞ (saat başına en çok 60 dk).
+    """
+    unit_uid = _resolve(machine)
+    start, end = _shift_window(date)
+    ov = _overlapping_stops(unit_uid, start, end)
     base = start.floor("h")
+
     buckets = []
     for i in range(24):
-        b = base + pd.Timedelta(hours=i)
-        sub = m[m["bucket"] == b]
-        planned = float(sub.loc[sub["is_planned"] == True, "duration_milliseconds"].sum())   # noqa: E712
-        unplanned = float(sub.loc[sub["is_planned"] == False, "duration_milliseconds"].sum())  # noqa: E712
-        buckets.append({"hour": b.strftime("%H:%M"),
-                        "planned_h": planned / 3_600_000, "unplanned_h": unplanned / 3_600_000})
+        hb = base + pd.Timedelta(hours=i)
+        he = hb + pd.Timedelta(hours=1)
+        sub = ov[(ov["started_on"] < he) & (ov["ended_on"] > hb)].copy()
+        if not sub.empty:
+            sub["clip_ms"] = _hour_clip_ms(sub, hb, he)
+            planned = float(sub.loc[sub["is_planned"] == True, "clip_ms"].sum())    # noqa: E712
+            unplanned = float(sub.loc[sub["is_planned"] == False, "clip_ms"].sum())  # noqa: E712
+        else:
+            planned = unplanned = 0.0
+        buckets.append({"hour": hb.strftime("%H:%M"),
+                        "planned_min": round(planned / 60_000, 2),
+                        "unplanned_min": round(unplanned / 60_000, 2)})
     return {"machine": machine, "unit_uid": unit_uid, "date": date, "buckets": buckets}
+
+
+def stoppage_kpis(machine: str, date: str) -> dict:
+    """Duruşlar sayfası için 4 özet KPI: toplam duruş, plansız oran, MTBF, MTTR."""
+    unit_uid = _resolve(machine)
+    b = get_baseline(machine, date)
+    work = b["availability"]["work_total_ms"]
+    planned = b["availability"]["planned_stop_ms"]
+    unplanned = b["availability"]["unplanned_stop_ms"]
+    run = b["availability"]["run_time_ms"]
+    total_stop = planned + unplanned
+
+    start, end = _shift_window(date)
+    s = repository.stoppage_slices()
+    ev = s[(s["unit_uid"] == unit_uid) & (s["started_on"] >= start) & (s["started_on"] < end)
+           & (~s["is_planned"]) & (~s["exclude_from_oee"]) & (~s["is_test_prod"])]
+    n = int(len(ev))
+
+    return {
+        "machine": machine, "unit_uid": unit_uid, "date": date,
+        "total_stop_ms": total_stop,
+        "total_stop_h": total_stop / 3_600_000,
+        "unplanned_ratio_pct": (unplanned / total_stop * 100) if total_stop else 0.0,
+        "unplanned_events": n,
+        "mtbf_ms": (run / n) if n else 0.0,        # iki arıza arası ortalama çalışma
+        "mttr_ms": (unplanned / n) if n else 0.0,  # ortalama tamir/duruş süresi
+    }
+
+
+def oee_hourly_trend(machine: str, date: str) -> dict:
+    """
+    Tek bir gün için SAATLİK OEE trendi. Saatlik Availability duruşlardan
+    (kırpılmış) hesaplanır; P ve Q gün-seviyesi sabit alınır (saatlik P yoktur).
+    """
+    unit_uid = _resolve(machine)
+    try:
+        b = get_baseline(machine, date)
+        P = b["performance"]["P"]
+        Q = b["quality"]["Q"]
+    except ValueError:
+        P, Q = 0.0, 1.0  # o gün OEE baz verisi yok -> saatlik A yine duruşlardan gelir
+    start, end = _shift_window(date)
+    ov = _overlapping_stops(unit_uid, start, end)
+    base = start.floor("h")
+    HOUR_MS = 3_600_000
+
+    points = []
+    for i in range(24):
+        hb = base + pd.Timedelta(hours=i)
+        he = hb + pd.Timedelta(hours=1)
+        sub = ov[(ov["started_on"] < he) & (ov["ended_on"] > hb)].copy()
+        planned = unplanned = 0.0
+        if not sub.empty:
+            sub["clip_ms"] = _hour_clip_ms(sub, hb, he)
+            planned = float(sub.loc[sub["is_planned"] == True, "clip_ms"].sum())    # noqa: E712
+            unplanned = float(sub.loc[sub["is_planned"] == False, "clip_ms"].sum())  # noqa: E712
+        scheduled = HOUR_MS - planned
+        run = max(scheduled - unplanned, 0.0)
+        A = (run / scheduled) if scheduled > 0 else 0.0
+        oee = A * P * Q
+        points.append({"hour": hb.strftime("%H:%M"),
+                       "availability": A * 100, "performance": P * 100, "oee": oee * 100})
+    return {"machine": machine, "unit_uid": unit_uid, "date": date, "points": points}
 
 
 def counter_trend(machine: str, date: str) -> dict:
     """Vardiya günü boyunca saatlik üretilen parça (COUNT sayaç artışları, slayt 'Counters')."""
     unit_uid = _resolve(machine)
     c = repository.counter_slices()
-    start, end = _shift_window(date)
+    start, end = _calendar_window(date)  # takvim günü (off-by-one düzeltmesi)
     m = c[(c["unit_uid"] == unit_uid) & (c["slice_on"] >= start) & (c["slice_on"] < end)
           & (c["signal_type"] == "COUNT") & (~c["exclude_from_oee"])].copy()
     m["bucket"] = m["slice_on"].dt.floor("h")
@@ -359,12 +444,106 @@ def get_root_cause(machine: str, date: str, window_min: int | None = None) -> di
 
 
 # ---------------------------------------------------------------------------
+# AI Kök Neden Analizi (Gemini)
+# ---------------------------------------------------------------------------
+
+def _build_rca_prompt(machine: str, date: str, card: dict, dev: dict | None) -> str:
+    """Kök neden kartı + sapma + olay çizelgesinden Gemini için Türkçe prompt kurar."""
+    a0 = card["alarms"][0]
+    lines = [
+        f"Makine: {machine} | Gün: {date}",
+        f"Birincil alarm: {a0['message']} (tüm geçmişte {a0['recurrence_total']} kez tekrarlamış)",
+        "Günün alarmları: " + "; ".join(f"{a['message']} (x{a['recurrence_total']})" for a in card["alarms"]),
+        f"Telemetri kanıtı: {card['evidence']}",
+    ]
+    if dev and dev.get("available"):
+        lines.append(f"İstatistiksel sapma: {dev['summary']}")
+    if card.get("downtime_context"):
+        dc = card["downtime_context"]
+        lines.append(f"Vardiya {dc['shift_date']} toplam plansız duruş: {dc['total_unplanned_h']:.1f} saat")
+    tl = card.get("timeline") or {}
+    ev = []
+    for x in tl.get("alerts", []):
+        ev.append(f"{x['time']} ALARM: {x['message']}")
+    for x in tl.get("telemetry", []):
+        ev.append(f"{x['time']} TELEMETRİ {x['signal']}={x['value']}")
+    for x in tl.get("stoppages", []):
+        ev.append(f"{x['started_on']} DURUŞ: {x['reason']} ({'planlı' if x['is_planned'] else 'plansız'})")
+    if ev:
+        lines.append("Olay çizelgesi:\n" + "\n".join(ev[:25]))
+
+    data_block = "\n".join(lines)
+    return (
+        "Sen kıdemli bir bakım/güvenilirlik (reliability) mühendisisin. Aşağıdaki CNC "
+        "makinesine ait kök-neden verisini analiz et.\n\n"
+        f"{data_block}\n\n"
+        "Türkçe, kısa ve teknik bir rapor yaz. Şu başlıkları kullan (markdown):\n"
+        "## Özet Teşhis\n## En Olası Kök Neden\n## Destekleyen Kanıtlar\n"
+        "## Önerilen Aksiyonlar (önceliklendirilmiş)\n## Önleyici Bakım Notu\n"
+        "Veride olmayan çıkarımları 'varsayım' diye etiketle. Kısa madde işaretleri kullan."
+    )
+
+
+def _local_rca_summary(card: dict, dev: dict | None) -> str:
+    """Gemini yoksa kart verisinden yerel (markdown) özet üretir."""
+    rank = {"Yüksek": 3, "Orta": 2, "Düşük": 1}
+    top = max(card.get("hypotheses", []), key=lambda h: rank.get(h["likelihood"], 0), default=None)
+    out = ["## Özet Teşhis", card.get("summary", ""), "", "## En Olası Kök Neden"]
+    out.append(f"- {top['hypothesis']} (ihtimal: {top['likelihood']})" if top else "- Yeterli kanıt yok.")
+    out += ["", "## Destekleyen Kanıtlar", f"- {card.get('evidence', '')}"]
+    if dev and dev.get("available"):
+        out.append(f"- {dev['summary']}")
+    if card.get("downtime_context"):
+        dc = card["downtime_context"]
+        out.append(f"- Vardiya {dc['shift_date']}: {dc['total_unplanned_h']:.1f} saat plansız duruş")
+    out += ["", "## Önerilen Aksiyonlar"]
+    for al in card["alarms"]:
+        out.append(f"- **{al['message']}**: {al['recommendation']}")
+    return "\n".join(out)
+
+
+def analyze_root_cause(machine: str, date: str, window_min: int | None = None) -> dict:
+    """
+    Kök neden verisini Gemini'ye gönderip detaylı analiz alır.
+    Anahtar yoksa veya hata olursa kart verisinden YEREL özet döner (sayfa hep çalışır).
+    """
+    card = get_root_cause(machine, date, window_min)  # JSON-güvenli (string zamanlar)
+    if not card.get("has_alarm"):
+        return {"machine": machine, "date": date, "has_alarm": False,
+                "source": "none", "analysis": card.get("summary", "")}
+
+    unit_uid = _resolve(machine)
+    try:
+        dev = _jsonify(rca.deviation_analysis(unit_uid, card["primary_time"]))
+    except Exception:  # noqa: BLE001
+        dev = None
+    prompt = _build_rca_prompt(machine, date, card, dev)
+
+    if ai.is_configured():
+        try:
+            text = ai.call_gemini(prompt)
+            return {"machine": machine, "date": date, "has_alarm": True,
+                    "source": "gemini", "model": settings.gemini_model, "analysis": text}
+        except Exception as exc:  # noqa: BLE001 — Gemini hatasında yerele düş
+            return {"machine": machine, "date": date, "has_alarm": True, "source": "local",
+                    "note": f"Gemini kullanılamadı: {exc}", "analysis": _local_rca_summary(card, dev)}
+    return {"machine": machine, "date": date, "has_alarm": True, "source": "local",
+            "analysis": _local_rca_summary(card, dev)}
+
+
+# ---------------------------------------------------------------------------
 # İŞ EMİRLERİ & STOK
 # ---------------------------------------------------------------------------
 
 def _shift_window(date: str):
-    """Vardiya penceresi [gün 21:00 UTC, +24s)."""
+    """Vardiya penceresi [gün 21:00 UTC, +24s) — OEE/duruş (oee_summary ile uyumlu)."""
     start = pd.Timestamp(date, tz="UTC") + pd.Timedelta(hours=21)
+    return start, start + pd.Timedelta(hours=24)
+
+
+def _calendar_window(date: str):
+    """Takvim günü [gün 00:00 UTC, +24s) — iş emri/stok/sayaç (kullanıcı beklentisi)."""
+    start = pd.Timestamp(date, tz="UTC")
     return start, start + pd.Timedelta(hours=24)
 
 
@@ -372,47 +551,83 @@ def list_workorders(machine: str, date: str) -> dict:
     """Bir makinenin vardiya günündeki iş emri çalışmaları."""
     unit_uid = _resolve(machine)
     wo = repository.workorders()
-    start, end = _shift_window(date)
+    start, end = _calendar_window(date)  # takvim günü (off-by-one düzeltmesi)
     m = wo[(wo["unit_uid"] == unit_uid) & (wo["started_on"] >= start) & (wo["started_on"] < end)]
     m = m.sort_values("started_on")
-    orders = [{
-        "order_no": _native(r.order_no),
-        "is_stock": bool(r.is_stock == "t") if isinstance(r.is_stock, str) else bool(r.is_stock),
-        "started_on": _native(r.started_on),
-        "ended_on": _native(r.ended_on),
-        "duration_ms": _native(r.duration_milliseconds),
-        "stock_cycle_ms": _native(r.stock_cycle),
-        "planned_quantity": _native(r.planned_quantity),
-    } for r in m.itertuples(index=False)]
+    orders = []
+    for r in m.itertuples(index=False):
+        dur = r.duration_milliseconds
+        # Çevrim, çalışma süresini AŞAMAZ -> süreye clamp (mantıksal tutarlılık).
+        cyc = None if pd.isna(r.stock_cycle) else min(float(r.stock_cycle), float(dur))
+        orders.append({
+            "order_no": _native(r.order_no),
+            "is_stock": bool(r.is_stock == "t") if isinstance(r.is_stock, str) else bool(r.is_stock),
+            "started_on": _native(r.started_on),
+            "ended_on": _native(r.ended_on),
+            "duration_ms": _native(dur),
+            "stock_cycle_ms": _native(cyc),
+            "planned_quantity": _native(r.planned_quantity),
+        })
     return {"machine": machine, "unit_uid": unit_uid, "date": date,
             "count": len(orders), "orders": orders}
 
 
-def stock_summary(machine: str, date: str) -> dict:
-    """Vardiya günündeki iş emirlerini program (order_no) bazında özetler."""
-    unit_uid = _resolve(machine)
-    wo = repository.workorders()
-    start, end = _shift_window(date)
-    m = wo[(wo["unit_uid"] == unit_uid) & (wo["started_on"] >= start) & (wo["started_on"] < end)]
+def stock_summary(machine: str, start: str, end: str | None = None) -> dict:
+    """
+    Stok / Program Özeti — TAMAMEN GERÇEK dataset verisi (uydurma yok).
 
-    items = []
-    if not m.empty:
-        g = (m.groupby("order_no")
-               .agg(runs=("order_no", "size"),
-                    total_duration_ms=("duration_milliseconds", "sum"),
-                    avg_cycle_ms=("stock_cycle", "mean"),
-                    planned_quantity=("planned_quantity", "sum"))
-               .reset_index()
-               .sort_values("total_duration_ms", ascending=False))
-        items = [{
-            "order_no": _native(r.order_no),
-            "runs": _native(r.runs),
-            "total_duration_ms": _native(r.total_duration_ms),
-            "avg_cycle_ms": _native(r.avg_cycle_ms),
-            "planned_quantity": _native(r.planned_quantity),
-        } for r in g.itertuples(index=False)]
-    return {"machine": machine, "unit_uid": unit_uid, "date": date,
-            "count": len(items), "items": items}
+    Kaynak: trex_mes_workorder (program/runs/süre/çevrim) + trex_mes_counter_slice
+    (üretilen adet, COUNT artışları). Tarih aralığı TAKVİM penceresi.
+
+    Sütunlar:
+      - Çalışma Sayısı = o programın iş emri kaydı sayısı (gerçek)
+      - Toplam Süre = duration_milliseconds toplamı (gerçek)
+      - Ort. Çevrim = stock_cycle ortalaması, süreye clamp'li (gerçek alan)
+      - Üretilen Adet = iş emri zaman pencerelerindeki sayaç artışları (gerçek)
+    Not: planned_quantity dataset'te hep 0, fire/hedef veri setinde yok -> gösterilmez.
+    """
+    unit_uid = _resolve(machine)
+    end = end or start
+    cstart = pd.Timestamp(start, tz="UTC")
+    cend = pd.Timestamp(end, tz="UTC") + pd.Timedelta(days=1)
+
+    wo = repository.workorders()
+    m = wo[(wo["unit_uid"] == unit_uid) & (wo["started_on"] >= cstart) & (wo["started_on"] < cend)]
+
+    # Sayaç (COUNT) dilimleri — üretilen adet için
+    c = repository.counter_slices()
+    cw = c[(c["unit_uid"] == unit_uid) & (c["signal_type"] == "COUNT")
+           & (~c["exclude_from_oee"]) & (c["slice_on"] >= cstart) & (c["slice_on"] < cend)][["slice_on", "value"]]
+
+    agg = {}  # order_no -> toplamlar
+    for r in m.itertuples(index=False):
+        o = str(r.order_no)
+        a = agg.setdefault(o, {"runs": 0, "dur": 0.0, "produced": 0.0, "cyc": []})
+        a["runs"] += 1
+        a["dur"] += float(r.duration_milliseconds)
+        # bu iş emri penceresindeki sayaç artışları = üretilen parça (gerçek)
+        a["produced"] += float(cw.loc[(cw["slice_on"] >= r.started_on)
+                                      & (cw["slice_on"] <= r.ended_on), "value"].sum())
+        if pd.notna(r.stock_cycle):
+            a["cyc"].append(min(float(r.stock_cycle), float(r.duration_milliseconds)))  # çevrim<=süre
+
+    items = [{
+        "order_no": o,
+        "runs": a["runs"],
+        "total_duration_ms": a["dur"],
+        "avg_cycle_ms": (sum(a["cyc"]) / len(a["cyc"])) if a["cyc"] else None,
+        "produced": int(round(a["produced"])),
+    } for o, a in agg.items()]
+    items.sort(key=lambda x: x["total_duration_ms"], reverse=True)
+
+    return {
+        "machine": machine, "unit_uid": unit_uid, "start": start, "end": end,
+        "count": len(items),
+        "total_runs": sum(i["runs"] for i in items),
+        "total_duration_ms": sum(i["total_duration_ms"] for i in items),
+        "total_produced": sum(i["produced"] for i in items),
+        "items": items,
+    }
 
 
 # ---------------------------------------------------------------------------

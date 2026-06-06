@@ -310,3 +310,37 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 5px; cur
   display: grid; place-items: center; flex-shrink: 0; }
 .top3-nm { flex: 1; font-weight: 600; }
 .top3-oee { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* ===== Duruşlar KPI kartları ===== */
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 4px; }
+@media (max-width: 920px) { .kpi-row { grid-template-columns: 1fr 1fr; } }
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 16px; display: flex; align-items: center; gap: 14px; }
+.kpi-ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; }
+.kpi-ic.blue { background: var(--blue-soft); color: var(--accent); }
+.kpi-ic.red { background: var(--red-soft); color: var(--red); }
+.kpi-ic.green { background: var(--green-soft); color: var(--green); }
+.kpi-ic.amber { background: var(--amber-soft); color: var(--amber); }
+.kpi-val { font-size: 22px; font-weight: 800; line-height: 1.1; }
+.kpi-label { color: var(--muted); font-size: 12.5px; font-weight: 600; margin-top: 2px; }
+.kpi-sub { color: var(--muted); font-size: 11px; margin-top: 1px; }
+
+/* ===== AI Detaylı Analiz (Gemini) ===== */
+.ai-box { margin: 16px 0; padding-top: 14px; border-top: 1px solid var(--border); }
+.ai-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ai-btn { display: inline-flex; align-items: center; gap: 8px;
+  background: linear-gradient(135deg, #6d4bf5, #2b6cf0); color: #fff; border: none;
+  border-radius: 10px; padding: 10px 16px; font-weight: 700; font-size: 13.5px; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(86,76,245,.3); }
+.ai-btn:hover { filter: brightness(1.07); }
+.ai-btn:disabled { opacity: .6; cursor: not-allowed; }
+.ai-panel { margin-top: 12px; background: var(--panel2); border: 1px solid var(--border);
+  border-left: 3px solid #6d4bf5; border-radius: 0 10px 10px 0; padding: 14px 16px; font-size: 13.5px; }
+.ai-md .ai-h { font-weight: 800; font-size: 13.5px; color: var(--accent); margin: 10px 0 4px; }
+.ai-md .ai-h:first-child { margin-top: 0; }
+.ai-md .ai-li { margin: 2px 0 2px 4px; line-height: 1.55; }
+
+.ai-note { margin-top: 10px; background: var(--amber-soft); border: 1px solid #f0c97a;
+  color: #8a5a12; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word; }
+[data-theme="dark"] .ai-note { color: #e0a23a; border-color: #5a4520; }

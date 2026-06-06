@@ -24,7 +24,7 @@ export default function StoppageTrendChart({ machine, date, dark }) {
 
   return (
     <Card title="Duruş Zaman Serisi (saatlik)"
-          action={<span className="muted small">{date} · planlı vs plansız</span>}>
+          action={<span className="muted small">{date} · planlı vs plansız (dk)</span>}>
       {err && <div className="err">{err}</div>}
       {!data && !err && <div className="spin">Yükleniyor…</div>}
       {data && (
@@ -32,11 +32,13 @@ export default function StoppageTrendChart({ machine, date, dark }) {
           <BarChart data={data.buckets} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
             <CartesianGrid stroke={grid} strokeDasharray="3 3" />
             <XAxis dataKey="hour" tick={{ fill: ax, fontSize: 10 }} interval={1} />
-            <YAxis tick={{ fill: ax, fontSize: 11 }} unit="s" />
-            <Tooltip contentStyle={tip} formatter={(v, n) => [`${Number(v).toFixed(2)} sa`, n]} />
+            <YAxis domain={[0, 60]} ticks={[0, 15, 30, 45, 60]} tick={{ fill: ax, fontSize: 11 }} unit=" dk" />
+            <Tooltip contentStyle={tip}
+                     labelFormatter={(h) => `Saat ${h}`}
+                     formatter={(v, n) => [`${Number(v).toFixed(1)} dk`, n]} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="planned_h" stackId="s" name="Planlı" fill="#25b06b" radius={[0, 0, 0, 0]} />
-            <Bar dataKey="unplanned_h" stackId="s" name="Plansız" fill="#e2483d" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="planned_min" stackId="s" name="Planlı" fill="#25b06b" radius={[0, 0, 0, 0]} />
+            <Bar dataKey="unplanned_min" stackId="s" name="Plansız" fill="#e2483d" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )}
