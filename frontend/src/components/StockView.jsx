@@ -39,7 +39,7 @@ export default function StockView({ machine, start, end }) {
         <Kpi Icon={Repeat} tone="amber" label="Toplam Çalışma (run)" value={data.total_runs}
              sub={`${fmtHM(data.total_duration_ms)} toplam süre`} />
         <Kpi Icon={Boxes} tone="green" label="Toplam Üretim (adet)" value={data.total_produced.toLocaleString()}
-             sub="sayaç verisi (gerçek)" />
+             sub="oee_summary ProductSum (gerçek)" />
       </div>
 
       <Card title={`Stok / Program Özeti · ${machine} · ${range}`} noPad>
@@ -63,7 +63,7 @@ export default function StockView({ machine, start, end }) {
                   <td>{it.runs}</td>
                   <td>{fmtHM(it.total_duration_ms)}</td>
                   <td>{fmtCycle(it.avg_cycle_ms)}</td>
-                  <td><b>{it.produced.toLocaleString()}</b></td>
+                  <td><b>{it.produced != null ? it.produced.toLocaleString() : '—'}</b></td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div className="freqbar" style={{ flex: 1 }}>
@@ -80,6 +80,12 @@ export default function StockView({ machine, start, end }) {
             )}
           </tbody>
         </table>
+        {!data.has_program_counter && data.items.length > 0 && (
+          <div className="small muted" style={{ padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
+            ℹ️ Bu makinede program-bazlı sayaç (COUNT) verisi yok (ör. Mitsubishi farklı kaydeder);
+            "Üretilen Adet" satır bazında "—". Toplam üretim üstte gerçek <b>ProductSum</b>'dan gelir.
+          </div>
+        )}
       </Card>
     </>
   )

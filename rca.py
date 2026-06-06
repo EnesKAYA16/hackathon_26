@@ -25,7 +25,7 @@ import pandas as pd
 import nightwatch_repo as nw
 import repository
 from config import settings
-from oee_baseline import fmt_hms, ms_to_hours
+from oee_baseline import ms_to_hours
 from oee_whatif import get_unplanned_by_reason, reason_name
 
 # Alarm metnine göre önerilen aksiyon (substring eşleşmesi, normalize edilmiş).
@@ -103,17 +103,46 @@ def _stoppages_overlapping(unit_uid: str, start: pd.Timestamp, end: pd.Timestamp
     return ov.sort_values("started_on")
 
 
-def build_timeline(unit_uid: str, center, window_min: int | None = None) -> dict:
+# Makine tipine göre RCA sinyalleri (Slayt 7 matrisi). Mevcut sinyallerden ilk eşleşeni seçer.
+# Run/durum sinyali öncelik sırası (Fanuc -> Mitsubishi):
+_RUN_KEYS = ["STATINFO_RUN", "RUN_STATUS_START", "RUN_STATUS", "ISNOTRUNNING", "EXECUTION"]
+# Sapma (sürekli numerik) sinyali. "CYCLE_TIME" hem Fanuc (CYCLE_TIME_MS) hem
+# Mitsubishi (CYCLE_TIME_M800) ile eşleşir; sonra güç/sıcaklık/yük.
+_DEV_KEYS = ["CYCLE_TIME", "POWER_CONSUMPTION", "SERVO_MOTOR_TEMPERATURE",
+             "TEMPERATURE", "PATH_LOAD", "LOAD"]
+
+
+def pick_signals(unit_uid: str) -> dict:
+    """Makinenin GERÇEK mevcut sinyallerinden run ve sapma sinyalini seçer (tip-agnostik)."""
+    try:
+        names = nw.signal_map(unit_uid)["readingdef_name"].astype(str).tolist()
+    except Exception:  # noqa: BLE001
+        names = []
+    upper = [(n, n.upper()) for n in names]
+
+    def find(keys):
+        for k in keys:
+            for orig, up in upper:
+                if k in up:
+                    return orig
+        return None
+
+    return {"run": find(_RUN_KEYS), "dev": find(_DEV_KEYS)}
+
+
+def build_timeline(unit_uid: str, center, window_min: int | None = None,
+                   post_min: int | None = None) -> dict:
     """
-    Bir an (center) etrafında ±window_min dakikalık olay çizelgesi:
-    alarmlar + duruşlar + telemetri geçişleri (run durumu vb.).
+    Bir an (center) etrafında [-window_min, +post_min] dk olay çizelgesi (Slayt: -15/+5):
+    alarmlar + duruşlar + telemetri geçişleri (makineye göre seçilen run sinyali).
     """
     window_min = window_min or settings.rca_window_minutes
+    post_min = post_min if post_min is not None else settings.rca_post_minutes
     center = pd.Timestamp(center)
     if center.tzinfo is None:
         center = center.tz_localize("UTC")
     start = center - pd.Timedelta(minutes=window_min)
-    end = center + pd.Timedelta(minutes=window_min)
+    end = center + pd.Timedelta(minutes=post_min)
 
     # Alarmlar
     al = repository.alerts()
@@ -127,16 +156,18 @@ def build_timeline(unit_uid: str, center, window_min: int | None = None) -> dict
         "is_planned": bool(r.is_planned), "duration_ms": int(r.duration_milliseconds),
     } for r in stp.itertuples(index=False)]
 
-    # Telemetri (run durumu + execution) geçişleri — KANIT
-    tel = nw.telemetry_window(unit_uid, start, end,
-                              signal_names=["STATINFO_RUN", "EXECUTION"])
-    tel_t = nw.transitions(tel)
-    telemetry = [{"time": r.time, "signal": r.signal, "value": r.value}
-                 for r in tel_t.itertuples(index=False)]
+    # Telemetri (makineye göre seçilen run sinyali) geçişleri — KANIT
+    run_sig = pick_signals(unit_uid)["run"]
+    telemetry = []
+    if run_sig:
+        tel = nw.telemetry_window(unit_uid, start, end, signal_names=[run_sig])
+        tel_t = nw.transitions(tel)
+        telemetry = [{"time": r.time, "signal": r.signal, "value": r.value}
+                     for r in tel_t.itertuples(index=False)]
 
     return {
-        "center": center, "window_min": window_min,
-        "window_start": start, "window_end": end,
+        "center": center, "window_min": window_min, "post_min": post_min,
+        "window_start": start, "window_end": end, "run_signal": run_sig,
         "alerts": alerts, "stoppages": stoppages, "telemetry": telemetry,
     }
 
@@ -216,7 +247,7 @@ def _build_hypotheses(primary_msg: str, recurrence: int, run_stopped: bool,
     # H2: Alarm üretimi durdurdu (anlık etki)
     hyps.append({
         "hypothesis": "Alarm makineyi anında durdurdu (üretim kaybı).",
-        "expected": "Alarm anında run-durumu (STATINFO_RUN) 0 olmalı.",
+        "expected": "Alarm anında run-durumu sinyali 0 olmalı.",
         "data_result": "Run-durumu 0 (durdu)." if run_stopped else "Net duruş kanıtı yok.",
         "likelihood": "Yüksek" if run_stopped else "Düşük",
     })
@@ -275,10 +306,10 @@ def root_cause_card(unit_uid: str, date: str, window_min: int | None = None) -> 
     # Olay çizelgesi (telemetri kanıtı)
     timeline = build_timeline(unit_uid, primary_time, window_min)
 
-    # Run-durumu kanıtı: alarm anında YÜRÜRLÜKTEKİ STATINFO_RUN değeri (alarmdan
-    # önceki son geçiş; numune alarmdan birkaç yüz ms önce/sonra olabilir).
-    run_trans = sorted([t for t in timeline["telemetry"] if t["signal"] == "STATINFO_RUN"],
-                       key=lambda x: x["time"])
+    # Run-durumu kanıtı: alarm anında YÜRÜRLÜKTEKİ run sinyali değeri (makineye göre
+    # seçilen sinyal; alarmdan önceki son geçiş). build_timeline yalnız run sinyalini çeker.
+    run_sig = timeline.get("run_signal")
+    run_trans = sorted(timeline["telemetry"], key=lambda x: x["time"])
     effective_run = None
     for t in run_trans:
         if t["time"] <= primary_time:
@@ -288,12 +319,14 @@ def root_cause_card(unit_uid: str, date: str, window_min: int | None = None) -> 
     if effective_run is None and run_trans:  # alarm penceredeki ilk numuneden önceyse
         effective_run = str(run_trans[0]["value"]).strip()
     stopped = effective_run in ("0", "0.0")
-    evidence = (
-        f"Alarm anında ({primary_time:%H:%M:%S}) run-durumu (STATINFO_RUN) = 0 "
-        f"-> makine duruyordu; telemetri alarmı doğruluyor."
-        if stopped else
-        f"Alarm anında run-durumu (STATINFO_RUN) = {effective_run}; net duruş kanıtı yok."
-    )
+    sig_label = run_sig or "run-durumu"
+    if effective_run is None:
+        evidence = "Bu makine için run-durumu telemetrisi bulunamadı (sinyal yok)."
+    elif stopped:
+        evidence = (f"Alarm anında ({primary_time:%H:%M:%S}) {sig_label} = 0 "
+                    f"-> makine duruyordu; telemetri alarmı doğruluyor.")
+    else:
+        evidence = f"Alarm anında {sig_label} = {effective_run}; net duruş kanıtı yok."
 
     # Plansız duruş bağlamı (vardiya günü) — What-If/ROI köprüsü
     downtime_context = None

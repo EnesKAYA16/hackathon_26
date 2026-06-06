@@ -46,15 +46,12 @@ import json
 import pandas as pd
 
 import repository
-# Yol sabitleri artık tek kaynak: repository (geriye dönük uyumluluk için re-export).
-from repository import DATA_DIR, STOPPAGE_CSV  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # 0) AYARLAR — Burayı değiştirerek farklı makine/gün analiz edebilirsin.
 # ---------------------------------------------------------------------------
 
 # Veri dosyaları ve cache'li yükleyiciler repository.py içinde tanımlı.
-# (DATA_DIR ve STOPPAGE_CSV yukarıda repository'den import edildi.)
 
 # "M1" = veri setindeki "Makine 1". İsimden unit_uid'yi otomatik çözeceğiz.
 TARGET_MACHINE_NAME = "Makine 1"
@@ -171,6 +168,15 @@ def select_baseline_row(oee: pd.DataFrame, unit_uid: str, target_date: str) -> p
 # 4) OEE BİLEŞENLERİNİ HAM (ms) VERİDEN YENİDEN HESAPLA
 # ---------------------------------------------------------------------------
 
+def _num(v) -> float:
+    """null/NaN/sayı-olmayan -> 0.0 (Mitsubishi JSON'unda null alanlar olabilir)."""
+    try:
+        f = float(v)
+        return f if f == f else 0.0  # NaN ele
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def compute_availability(work_total: float, planned_stop: float, unplanned_stop: float) -> dict:
     """
     Availability hesabı — plansız duruşların etkisini AÇIKÇA gösterir.
@@ -233,19 +239,20 @@ def build_oee_breakdown(row: pd.Series) -> dict:
     p_json = safe_json(row["performance"])
     q_json = safe_json(row["quality"])
 
+    # Bazı makinelerde (ör. Mitsubishi) JSON alanları null/NaN olabilir -> 0'a coerce.
     avail = compute_availability(
-        work_total=a_json.get("WorkTotal", 0),
-        planned_stop=a_json.get("PlannedStop", 0),
-        unplanned_stop=a_json.get("UnPlannedStop", 0),
+        work_total=_num(a_json.get("WorkTotal")),
+        planned_stop=_num(a_json.get("PlannedStop")),
+        unplanned_stop=_num(a_json.get("UnPlannedStop")),
     )
     perf = compute_performance(
-        working_time=p_json.get("WorkingTime", 0),
-        planned_time=p_json.get("PlannedTime", 0),
-        stored_p=p_json.get("P"),
+        working_time=_num(p_json.get("WorkingTime")),
+        planned_time=_num(p_json.get("PlannedTime")),
+        stored_p=None if p_json.get("P") is None else _num(p_json.get("P")),
     )
     qual = compute_quality(
-        product_sum=q_json.get("ProductSum", 0),
-        scrape_sum=q_json.get("ScrapeSum", 0),
+        product_sum=_num(q_json.get("ProductSum")),
+        scrape_sum=_num(q_json.get("ScrapeSum")),
     )
 
     oee_recomputed = avail["A"] * perf["P"] * qual["Q"]
@@ -258,10 +265,10 @@ def build_oee_breakdown(row: pd.Series) -> dict:
         "OEE_recomputed": oee_recomputed,
         # Doğrulama için tablodaki hazır (pre-computed) değerler:
         "stored": {
-            "A": a_json.get("A"),
-            "P": p_json.get("P"),
-            "Q": q_json.get("Q"),
-            "OEE": row.get("oee"),
+            "A": _num(a_json.get("A")),
+            "P": _num(p_json.get("P")),
+            "Q": _num(q_json.get("Q")),
+            "OEE": _num(row.get("oee")),
         },
     }
 

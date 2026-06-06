@@ -14,6 +14,7 @@ Etkileşimli dokümantasyon (otomatik):
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
@@ -227,14 +228,19 @@ app.add_middleware(
 
 
 def _guard(call):
-    """Servis çağrılarını sarmalar: ValueError -> uygun HTTP hatası."""
+    """Servis çağrılarını sarmalar: girdi hatası -> 400/404, beklenmeyen -> temiz 500."""
     try:
         return call()
+    except HTTPException:
+        raise
     except ValueError as exc:
         msg = str(exc)
         # 'bulunamadı' -> kaynak yok (404), aksi halde geçersiz girdi (400).
         status = 404 if "bulunamadı" in msg or "kaydı yok" in msg else 400
         raise HTTPException(status_code=status, detail=msg)
+    except Exception as exc:  # noqa: BLE001 — ham stack trace yerine temiz JSON 500
+        logging.exception("Servis hatası")
+        raise HTTPException(status_code=500, detail=f"Sunucu hatası: {type(exc).__name__}: {exc}")
 
 
 # ---------------------------------------------------------------------------

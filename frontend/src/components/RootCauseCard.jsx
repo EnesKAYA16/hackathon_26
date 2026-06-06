@@ -134,7 +134,7 @@ export default function RootCauseCard({ machine, alarmDates }) {
             </>
           )}
 
-          <div className="section-sub">Olay Çizelgesi (±{card.timeline.window_min} dk)</div>
+          <div className="section-sub">Olay Çizelgesi (-{card.timeline.window_min}/+{card.timeline.post_min ?? 5} dk)</div>
           <Timeline tl={card.timeline} />
 
           {card.downtime_context && (

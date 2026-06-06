@@ -157,7 +157,7 @@ def pareto_unplanned(unit_uid: str, target_date: str, top_n: int = 5) -> pd.Data
 
 def print_pareto(machine: str, target_date: str, pareto: pd.DataFrame) -> None:
     print("=" * 72)
-    print(f" PARETO — En Çok Süre Kaybettiren Plansız Duruşlar")
+    print(" PARETO — En Çok Süre Kaybettiren Plansız Duruşlar")
     print(f" Makine: {machine}   |   Vardiya günü: {target_date}")
     print("=" * 72)
 

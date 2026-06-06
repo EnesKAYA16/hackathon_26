@@ -177,7 +177,6 @@ def stoppage_kpis(machine: str, date: str) -> dict:
     """Duruşlar sayfası için 4 özet KPI: toplam duruş, plansız oran, MTBF, MTTR."""
     unit_uid = _resolve(machine)
     b = get_baseline(machine, date)
-    work = b["availability"]["work_total_ms"]
     planned = b["availability"]["planned_stop_ms"]
     unplanned = b["availability"]["unplanned_stop_ms"]
     run = b["availability"]["run_time_ms"]
@@ -202,18 +201,29 @@ def stoppage_kpis(machine: str, date: str) -> dict:
 
 def oee_hourly_trend(machine: str, date: str) -> dict:
     """
-    Tek bir gün için SAATLİK OEE trendi. Saatlik Availability duruşlardan
-    (kırpılmış) hesaplanır; P ve Q gün-seviyesi sabit alınır (saatlik P yoktur).
+    Tek bir gün için SAATLİK OEE trendi (hepsi GERÇEK veriden).
+      - Saatlik Availability: duruşlardan, saat aralığına kırpılmış.
+      - Saatlik Performans: GERÇEK sayaç throughput'undan türetilir
+        (o saatteki parça/çalışma-saati oranı, günün ortalama oranına göre,
+         günün resmi P'sine sabitlenmiş). Q gün-seviyesi (veride hep 1).
     """
     unit_uid = _resolve(machine)
     try:
         b = get_baseline(machine, date)
-        P = b["performance"]["P"]
+        P_day = b["performance"]["P"]
         Q = b["quality"]["Q"]
+        day_pieces = float(b["quality"]["product_sum"])
+        day_run_h = float(b["availability"]["run_time_ms"]) / 3_600_000
     except ValueError:
-        P, Q = 0.0, 1.0  # o gün OEE baz verisi yok -> saatlik A yine duruşlardan gelir
+        P_day, Q, day_pieces, day_run_h = 0.0, 1.0, 0.0, 0.0
+    day_rate = (day_pieces / day_run_h) if day_run_h > 0 else 0.0  # parça/çalışma-saati
+
     start, end = _shift_window(date)
     ov = _overlapping_stops(unit_uid, start, end)
+    # Saatlik üretilen parça (gerçek sayaç)
+    c = repository.counter_slices()
+    cw = c[(c["unit_uid"] == unit_uid) & (c["signal_type"] == "COUNT")
+           & (~c["exclude_from_oee"]) & (c["slice_on"] >= start) & (c["slice_on"] < end)][["slice_on", "value"]]
     base = start.floor("h")
     HOUR_MS = 3_600_000
 
@@ -228,11 +238,21 @@ def oee_hourly_trend(machine: str, date: str) -> dict:
             planned = float(sub.loc[sub["is_planned"] == True, "clip_ms"].sum())    # noqa: E712
             unplanned = float(sub.loc[sub["is_planned"] == False, "clip_ms"].sum())  # noqa: E712
         scheduled = HOUR_MS - planned
-        run = max(scheduled - unplanned, 0.0)
-        A = (run / scheduled) if scheduled > 0 else 0.0
+        run_ms = max(scheduled - unplanned, 0.0)
+        A = (run_ms / scheduled) if scheduled > 0 else 0.0
+
+        # Saatlik performans = o saatin gerçek throughput'u / günün ortalama throughput'u × P_day
+        run_h = run_ms / HOUR_MS
+        pieces_h = float(cw.loc[(cw["slice_on"] >= hb) & (cw["slice_on"] < he), "value"].sum())
+        if day_rate > 0 and run_h > 0:
+            rate_h = pieces_h / run_h
+            P = min(P_day * (rate_h / day_rate), 1.0)
+        else:
+            P = 0.0 if run_h > 0 else P_day  # üretmediyse 0; hiç çalışmadıysa nötr
         oee = A * P * Q
-        points.append({"hour": hb.strftime("%H:%M"),
-                       "availability": A * 100, "performance": P * 100, "oee": oee * 100})
+        points.append({"hour": hb.strftime("%H:%M"), "pieces": int(pieces_h),
+                       "availability": round(A * 100, 2), "performance": round(P * 100, 2),
+                       "oee": round(oee * 100, 2)})
     return {"machine": machine, "unit_uid": unit_uid, "date": date, "points": points}
 
 
@@ -594,10 +614,11 @@ def stock_summary(machine: str, start: str, end: str | None = None) -> dict:
     wo = repository.workorders()
     m = wo[(wo["unit_uid"] == unit_uid) & (wo["started_on"] >= cstart) & (wo["started_on"] < cend)]
 
-    # Sayaç (COUNT) dilimleri — üretilen adet için
+    # Sayaç (COUNT) dilimleri — program-bazlı üretilen adet için (Fanuc'ta var).
     c = repository.counter_slices()
     cw = c[(c["unit_uid"] == unit_uid) & (c["signal_type"] == "COUNT")
            & (~c["exclude_from_oee"]) & (c["slice_on"] >= cstart) & (c["slice_on"] < cend)][["slice_on", "value"]]
+    has_counter = bool(len(cw)) and float(cw["value"].sum()) > 0  # bazı makinelerde COUNT yok/0 (ör. Mitsubishi)
 
     agg = {}  # order_no -> toplamlar
     for r in m.itertuples(index=False):
@@ -605,9 +626,9 @@ def stock_summary(machine: str, start: str, end: str | None = None) -> dict:
         a = agg.setdefault(o, {"runs": 0, "dur": 0.0, "produced": 0.0, "cyc": []})
         a["runs"] += 1
         a["dur"] += float(r.duration_milliseconds)
-        # bu iş emri penceresindeki sayaç artışları = üretilen parça (gerçek)
-        a["produced"] += float(cw.loc[(cw["slice_on"] >= r.started_on)
-                                      & (cw["slice_on"] <= r.ended_on), "value"].sum())
+        if has_counter:
+            a["produced"] += float(cw.loc[(cw["slice_on"] >= r.started_on)
+                                          & (cw["slice_on"] <= r.ended_on), "value"].sum())
         if pd.notna(r.stock_cycle):
             a["cyc"].append(min(float(r.stock_cycle), float(r.duration_milliseconds)))  # çevrim<=süre
 
@@ -616,16 +637,24 @@ def stock_summary(machine: str, start: str, end: str | None = None) -> dict:
         "runs": a["runs"],
         "total_duration_ms": a["dur"],
         "avg_cycle_ms": (sum(a["cyc"]) / len(a["cyc"])) if a["cyc"] else None,
-        "produced": int(round(a["produced"])),
+        "produced": int(round(a["produced"])) if has_counter else None,  # counter yoksa "—"
     } for o, a in agg.items()]
     items.sort(key=lambda x: x["total_duration_ms"], reverse=True)
+
+    # Toplam üretim: oee_summary.ProductSum (GERÇEK, TÜM makinelerde — Mitsubishi'de COUNT yok).
+    o = repository.oee_summary()
+    om = o[(o["level"] == 1) & (o["unit_uid"] == unit_uid)]
+    om = om[(om["trans_date"].dt.date >= pd.Timestamp(start).date())
+            & (om["trans_date"].dt.date <= pd.Timestamp(end).date())]
+    total_produced = int(sum(core.safe_json(q).get("ProductSum", 0) for q in om["quality"]))
 
     return {
         "machine": machine, "unit_uid": unit_uid, "start": start, "end": end,
         "count": len(items),
         "total_runs": sum(i["runs"] for i in items),
         "total_duration_ms": sum(i["total_duration_ms"] for i in items),
-        "total_produced": sum(i["produced"] for i in items),
+        "total_produced": total_produced,            # ProductSum (gerçek, tüm makineler)
+        "has_program_counter": has_counter,           # program-bazlı üretim var mı (Fanuc)
         "items": items,
     }
 
@@ -634,10 +663,13 @@ def stock_summary(machine: str, start: str, end: str | None = None) -> dict:
 # RCA — Referans Sapması (Teknik 3)
 # ---------------------------------------------------------------------------
 
-def get_deviation(machine: str, center: str, signal: str = "CYCLE_TIME_MS",
+def get_deviation(machine: str, center: str, signal: str | None = None,
                   window_min: int | None = None) -> dict:
-    """Bir telemetri sinyalinin olay anındaki istatistiksel sapması."""
+    """Bir telemetri sinyalinin olay anındaki istatistiksel sapması.
+    signal verilmezse makineye göre otomatik seçilir (Fanuc cycle / Mitsubishi sıcaklık-güç)."""
     unit_uid = _resolve(machine)
+    if not signal:
+        signal = rca.pick_signals(unit_uid)["dev"] or "CYCLE_TIME_MS"
     dev = rca.deviation_analysis(unit_uid, center, signal_name=signal, window_min=window_min)
     return _jsonify({"machine": machine, "unit_uid": unit_uid, "center": center, **dev})
 
@@ -688,7 +720,7 @@ def fleet_dashboard(date: str) -> dict:
             P = b["performance"]["P"] * 100
             produced = b["quality"]["product_sum"]
             unplanned_h = b["availability"]["unplanned_stop_h"]
-        except ValueError:
+        except Exception:  # noqa: BLE001 — o gün veri yok / bozuk satır: makineyi atlama, 0 göster
             oee = A = P = 0.0
             produced, unplanned_h = 0, 0.0
         status = "running" if A > 0 else "stopped"

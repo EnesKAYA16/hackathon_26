@@ -37,7 +37,8 @@ class Settings(BaseSettings):
 
     # Alan ayarları
     currency: str = "₺"
-    rca_window_minutes: int = 15  # RCA zaman çizelgesi penceresi (±dakika)
+    rca_window_minutes: int = 15  # RCA olay öncesi pencere (dakika, öncü göstergeler)
+    rca_post_minutes: int = 5     # RCA olay sonrası pencere (dakika, sonuçlar) — Slayt: -15/+5
 
     # Gemini (Google) — AI kök neden analizi. Anahtar SADECE .env'den okunur (kodda yok).
     gemini_api_key: str = ""
