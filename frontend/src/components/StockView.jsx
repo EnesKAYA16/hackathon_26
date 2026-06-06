@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api, fmtHM } from '../api.js'
 import Card from './Card.jsx'
+import CounterTrendChart from './CounterTrendChart.jsx'
 
-export default function StockView({ machine, date }) {
+export default function StockView({ machine, date, dark }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
 
@@ -20,6 +21,9 @@ export default function StockView({ machine, date }) {
 
   return (
     <>
+      <div style={{ marginBottom: 18 }}>
+        <CounterTrendChart machine={machine} date={date} dark={dark} />
+      </div>
       <div className="grid cols-2" style={{ marginBottom: 18 }}>
         <Card title="Program Sayısı"><div style={{ fontSize: 34, fontWeight: 800 }}>{data.count}</div>
           <div className="muted small">{date} vardiyasında çalışan farklı program</div></Card>

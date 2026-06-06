@@ -28,6 +28,7 @@ STOPPAGE_CSV = DATA_DIR / "trex_mes_stoppage_slice.csv"
 READING_DEF_CSV = DATA_DIR / "trex_mes_reading_def.csv"
 ALERT_CSV = DATA_DIR / "trex_mes_alert.csv"
 WORKORDER_CSV = DATA_DIR / "trex_mes_workorder.csv"
+COUNTER_CSV = DATA_DIR / "trex_mes_counter_slice.csv"
 NW_UNIT_CSV = DATA_DIR / "trex_nightwatch_unit.csv"
 NW_READING_DEF_CSV = DATA_DIR / "trex_nightwatch_reading_def.csv"
 
@@ -118,6 +119,16 @@ def nightwatch_reading_def() -> pd.DataFrame:
 
 
 @lru_cache(maxsize=1)
+def counter_slices() -> pd.DataFrame:
+    """Üretim sayacı dilimleri; value = parça artışı (delta). slice_on datetime."""
+    cols = ["unit_uid", "reading_def_uid", "signal_type", "value", "slice_on", "exclude_from_oee"]
+    c = pd.read_csv(COUNTER_CSV, usecols=cols)
+    c["slice_on"] = pd.to_datetime(c["slice_on"], utc=True, format="ISO8601")
+    c["exclude_from_oee"] = c["exclude_from_oee"].map({"t": True, "f": False}).astype("boolean")
+    return c
+
+
+@lru_cache(maxsize=1)
 def workorders() -> pd.DataFrame:
     """İş emirleri / stok çalışmaları; tarihler datetime'a çevrilmiş."""
     cols = ["unit_uid", "order_no", "is_work_order", "is_stock",
@@ -139,3 +150,4 @@ def warm_cache() -> None:
     nightwatch_units()
     nightwatch_reading_def()
     workorders()
+    counter_slices()

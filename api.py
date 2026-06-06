@@ -246,7 +246,7 @@ def root():
     return {"status": "ok", "docs": "/docs",
             "endpoints": ["/machines", "/machines/{machine}/dates",
                           "/oee/baseline", "/oee/pareto", "/oee/whatif",
-                          "/oee/stoppage-trend", "/oee/trend",
+                          "/oee/stoppage-trend", "/oee/trend", "/oee/counter-trend",
                           "/finance/assumptions",
                           "/rca/alerts", "/rca/alert-pareto",
                           "/rca/timeline", "/rca/root-cause", "/rca/deviation",
@@ -299,6 +299,13 @@ def oee_trend(machine: str = Query(examples=["Makine 1"]),
               days: int = Query(30, ge=2, le=180)):
     """Bir makinenin son N gün OEE/A/P trendi."""
     return _guard(lambda: service.oee_trend(machine, days))
+
+
+@app.get("/oee/counter-trend", tags=["oee"])
+def counter_trend(machine: str = Query(examples=["Makine 1"]),
+                  date: str = Query(examples=["2025-11-10"])):
+    """Vardiya günü boyunca saatlik üretilen parça (sayaç)."""
+    return _guard(lambda: service.counter_trend(machine, date))
 
 
 @app.post("/oee/whatif", response_model=WhatIfOut, tags=["oee"])

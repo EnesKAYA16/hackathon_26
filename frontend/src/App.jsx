@@ -144,7 +144,7 @@ export default function App() {
             </>
           )}
           {tab === 'workorders' && <WorkOrdersView machine={machine} date={date} />}
-          {tab === 'stock' && <StockView machine={machine} date={date} />}
+          {tab === 'stock' && <StockView machine={machine} date={date} dark={dark} />}
           {tab === 'alarmlar' && <AlarmlarView machine={machine} alarmDates={alarmDates} />}
           {tab === 'fleet' && <FleetView date={date} />}
 

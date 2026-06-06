@@ -151,6 +151,26 @@ def stoppage_trend(machine: str, date: str) -> dict:
     return {"machine": machine, "unit_uid": unit_uid, "date": date, "buckets": buckets}
 
 
+def counter_trend(machine: str, date: str) -> dict:
+    """Vardiya günü boyunca saatlik üretilen parça (COUNT sayaç artışları, slayt 'Counters')."""
+    unit_uid = _resolve(machine)
+    c = repository.counter_slices()
+    start, end = _shift_window(date)
+    m = c[(c["unit_uid"] == unit_uid) & (c["slice_on"] >= start) & (c["slice_on"] < end)
+          & (c["signal_type"] == "COUNT") & (~c["exclude_from_oee"])].copy()
+    m["bucket"] = m["slice_on"].dt.floor("h")
+
+    base = start.floor("h")
+    buckets = []
+    for i in range(24):
+        b = base + pd.Timedelta(hours=i)
+        pieces = float(m.loc[m["bucket"] == b, "value"].sum())
+        buckets.append({"hour": b.strftime("%H:%M"), "pieces": pieces})
+    total = float(m["value"].sum())
+    return {"machine": machine, "unit_uid": unit_uid, "date": date,
+            "total_pieces": total, "buckets": buckets}
+
+
 def oee_trend(machine: str, days: int = 30) -> dict:
     """Bir makinenin son N vardiya günü OEE/A/P trendi (baseline karşılaştırma, slayt 'Shift Comparison')."""
     unit_uid = _resolve(machine)
