@@ -20,6 +20,7 @@ import pandas as pd
 import finance as fin
 import oee_baseline as core
 import oee_whatif as whatif
+import rca
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,15 @@ def _native(v):
     if pd.isna(v):
         return None
     return v
+
+
+def _jsonify(obj):
+    """Dict/list/skaler'i özyinelemeli olarak JSON-güvenli native tiplere çevirir."""
+    if isinstance(obj, dict):
+        return {k: _jsonify(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonify(v) for v in obj]
+    return _native(obj)
 
 
 def _resolve(machine: str) -> str:
@@ -221,3 +231,45 @@ def run_whatif(machine: str, date: str, durus_nedeni: str, azaltma_yuzdesi: floa
         },
         "financial": _coerce_finance(financial),
     }
+
+
+# ---------------------------------------------------------------------------
+# RCA (Kök Neden Analizi) — Faz 3
+# ---------------------------------------------------------------------------
+
+def list_alerts(machine: str, date: str | None = None) -> dict:
+    """Bir makinenin alarmları (opsiyonel gün filtresi)."""
+    unit_uid = _resolve(machine)
+    df = rca.get_alerts(unit_uid, date)
+    return {
+        "machine": machine, "unit_uid": unit_uid, "date": date,
+        "count": int(len(df)),
+        "alerts": [{"started_on": _native(r.started_on), "message": _native(r.message)}
+                   for r in df.itertuples(index=False)],
+    }
+
+
+def get_alert_pareto(machine: str | None = None, top_n: int = 10) -> dict:
+    """En sık tekrarlayan alarmlar (makine veya tesis geneli)."""
+    unit_uid = _resolve(machine) if machine else None
+    df = rca.alert_pareto(unit_uid, top_n)
+    return {
+        "machine": machine, "unit_uid": unit_uid,
+        "items": [{"message": _native(r.message), "count": _native(r.count),
+                   "first_seen": _native(r.first_seen), "last_seen": _native(r.last_seen)}
+                  for r in df.itertuples(index=False)],
+    }
+
+
+def get_timeline(machine: str, center: str, window_min: int | None = None) -> dict:
+    """Bir an etrafında alarm + duruş + telemetri çizelgesi."""
+    unit_uid = _resolve(machine)
+    tl = rca.build_timeline(unit_uid, center, window_min)
+    return _jsonify({"machine": machine, "unit_uid": unit_uid, **tl})
+
+
+def get_root_cause(machine: str, date: str, window_min: int | None = None) -> dict:
+    """Kanıtlı kök neden kartı."""
+    unit_uid = _resolve(machine)
+    card = rca.root_cause_card(unit_uid, date, window_min)
+    return _jsonify({"machine": machine, **card})

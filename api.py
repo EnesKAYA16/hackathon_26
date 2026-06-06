@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 import repository
 import service
+from config import settings
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +162,34 @@ class WhatIfOut(BaseModel):
     financial: FinancialOut
 
 
+# --- RCA modelleri ---
+
+class AlertItem(BaseModel):
+    started_on: str
+    message: str
+
+
+class AlertsOut(BaseModel):
+    machine: str
+    unit_uid: str
+    date: str | None
+    count: int
+    alerts: list[AlertItem]
+
+
+class ParetoAlertItem(BaseModel):
+    message: str
+    count: int
+    first_seen: str
+    last_seen: str
+
+
+class AlertParetoOut(BaseModel):
+    machine: str | None
+    unit_uid: str | None
+    items: list[ParetoAlertItem]
+
+
 # ---------------------------------------------------------------------------
 # Uygulama kurulumu
 # ---------------------------------------------------------------------------
@@ -179,10 +208,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Frontend farklı origin'den çağıracağı için CORS açık (hackathon ayarı).
+# Frontend farklı origin'den çağıracağı için CORS (origin listesi .env'den).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_list,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -207,7 +236,10 @@ def _guard(call):
 def root():
     return {"status": "ok", "docs": "/docs",
             "endpoints": ["/machines", "/machines/{machine}/dates",
-                          "/oee/baseline", "/oee/pareto", "/oee/whatif"]}
+                          "/oee/baseline", "/oee/pareto", "/oee/whatif",
+                          "/finance/assumptions",
+                          "/rca/alerts", "/rca/alert-pareto",
+                          "/rca/timeline", "/rca/root-cause"]}
 
 
 @app.get("/machines", response_model=list[MachineOut], tags=["catalog"])
@@ -249,3 +281,37 @@ def whatif(req: WhatIfRequest):
     finance_inputs = req.finance.model_dump() if req.finance else None
     return _guard(lambda: service.run_whatif(
         req.machine, req.date, req.durus_nedeni, req.azaltma_yuzdesi, finance_inputs))
+
+
+# ---------------------------------------------------------------------------
+# RCA endpoint'leri (Faz 3)
+# ---------------------------------------------------------------------------
+
+@app.get("/rca/alerts", response_model=AlertsOut, tags=["rca"])
+def rca_alerts(machine: str = Query(examples=["Makine 1"]),
+               date: str | None = Query(default=None, examples=["2026-01-12"])):
+    """Bir makinenin CNC alarmları (opsiyonel gün filtresi)."""
+    return _guard(lambda: service.list_alerts(machine, date))
+
+
+@app.get("/rca/alert-pareto", response_model=AlertParetoOut, tags=["rca"])
+def rca_alert_pareto(machine: str | None = Query(default=None, examples=["Makine 1"]),
+                     top_n: int = Query(10, ge=1, le=100)):
+    """En sık tekrarlayan alarmlar (makine veya tesis geneli)."""
+    return _guard(lambda: service.get_alert_pareto(machine, top_n))
+
+
+@app.get("/rca/timeline", tags=["rca"])
+def rca_timeline(machine: str = Query(examples=["Makine 1"]),
+                 center: str = Query(examples=["2026-01-12 04:47:11"]),
+                 window_min: int | None = Query(default=None, ge=1, le=240)):
+    """Bir an etrafında ±window_min dk: alarm + duruş + telemetri çizelgesi."""
+    return _guard(lambda: service.get_timeline(machine, center, window_min))
+
+
+@app.get("/rca/root-cause", tags=["rca"])
+def rca_root_cause(machine: str = Query(examples=["Makine 1"]),
+                   date: str = Query(examples=["2026-01-12"]),
+                   window_min: int | None = Query(default=None, ge=1, le=240)):
+    """Kanıtlı kök neden kartı (alarm + telemetri kanıtı + öneri + downtime köprüsü)."""
+    return _guard(lambda: service.get_root_cause(machine, date, window_min))

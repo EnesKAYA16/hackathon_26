@@ -1,0 +1,16 @@
+# Ortam / gizli yapılandırma
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# DuckDB / cache dosyaları
+*.duckdb
+*.duckdb.wal
+
+# OS
+.DS_Store

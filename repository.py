@@ -14,19 +14,23 @@ için kritik. Tarih/encoding/boolean dönüşümleri de burada tek seferde yapı
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 
 import pandas as pd
 
-# hackathon_26/ -> kardeş klasör uludag_hackathon_dataset/
-DATA_DIR = Path(__file__).resolve().parent.parent / "uludag_hackathon_dataset"
+from config import settings
+
+# Veri klasörü .env / config'ten gelir (tek kaynak).
+DATA_DIR = settings.data_dir
 
 UNIT_CSV = DATA_DIR / "trex_mes_unit.csv"
 OEE_CSV = DATA_DIR / "trex_mes_oee_summary.csv"
 STOPPAGE_CSV = DATA_DIR / "trex_mes_stoppage_slice.csv"
 READING_DEF_CSV = DATA_DIR / "trex_mes_reading_def.csv"
+ALERT_CSV = DATA_DIR / "trex_mes_alert.csv"
+NW_UNIT_CSV = DATA_DIR / "trex_nightwatch_unit.csv"
+NW_READING_DEF_CSV = DATA_DIR / "trex_nightwatch_reading_def.csv"
 
-# reading_def UTF-8 DEĞİL; Türkçe karakterler için Latin-5.
+# Bu CSV'ler UTF-8 DEĞİL; Türkçe karakterler için Latin-5.
 READING_DEF_ENCODING = "iso-8859-9"
 
 
@@ -77,9 +81,47 @@ def reading_def_lookup() -> pd.DataFrame:
     return rd.drop_duplicates(subset="uid").set_index("uid")
 
 
+@lru_cache(maxsize=1)
+def alerts() -> pd.DataFrame:
+    """
+    CNC alarm eventleri (RCA giriş noktası). started_on datetime'a çevrilmiş,
+    alarm metni (value) boşlukları kırpılmış. Türkçe -> Latin-5 encoding.
+    """
+    al = pd.read_csv(ALERT_CSV, encoding=READING_DEF_ENCODING)
+    al["started_on"] = pd.to_datetime(al["started_on"], utc=True, format="ISO8601")
+    if "ended_on" in al.columns:
+        al["ended_on"] = pd.to_datetime(al["ended_on"], utc=True, format="ISO8601")
+    # Alarm metnini temizle (baştaki/sondaki boşluk ve '\n').
+    al["message"] = al["value"].astype(str).str.replace(r"\\n", "", regex=True).str.strip()
+    return al
+
+
+@lru_cache(maxsize=1)
+def nightwatch_units() -> pd.DataFrame:
+    """Nightwatch makine ana verisi (integer id <-> unit_uid eşlemesi)."""
+    return pd.read_csv(NW_UNIT_CSV, usecols=["id", "unit_uid", "name"])
+
+
+@lru_cache(maxsize=1)
+def nightwatch_reading_def() -> pd.DataFrame:
+    """
+    Nightwatch sinyal tanımları. unit_id (integer) -> readingdef_uid eşlemesi
+    telemetriyi makineye bağlamak için gerekli. Türkçe -> Latin-5.
+    """
+    return pd.read_csv(
+        NW_READING_DEF_CSV,
+        encoding=READING_DEF_ENCODING,
+        usecols=["unit_id", "readingdef_uid", "readingdef_name", "display_name",
+                 "external_signal_type"],
+    )
+
+
 def warm_cache() -> None:
     """Tüm tabloları önceden belleğe yükler (API başlangıcında çağrılır)."""
     units()
     oee_summary()
     stoppage_slices()
     reading_def_lookup()
+    alerts()
+    nightwatch_units()
+    nightwatch_reading_def()
