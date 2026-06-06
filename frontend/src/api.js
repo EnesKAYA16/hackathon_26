@@ -38,6 +38,8 @@ export const api = {
   alerts: (m, d) => get(`/rca/alerts?machine=${q(m)}${d ? `&date=${d}` : ''}`),
   alertPareto: (m, n = 10) => get(`/rca/alert-pareto?machine=${q(m)}&top_n=${n}`),
   rootCause: (m, d, w) => get(`/rca/root-cause?machine=${q(m)}&date=${d}${w ? `&window_min=${w}` : ''}`),
+  workorders: (m, d) => get(`/workorders?machine=${q(m)}&date=${d}`),
+  stock: (m, d) => get(`/stock?machine=${q(m)}&date=${d}`),
 }
 
 // Yardımcılar

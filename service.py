@@ -21,6 +21,7 @@ import finance as fin
 import oee_baseline as core
 import oee_whatif as whatif
 import rca
+import repository
 
 
 # ---------------------------------------------------------------------------
@@ -273,3 +274,60 @@ def get_root_cause(machine: str, date: str, window_min: int | None = None) -> di
     unit_uid = _resolve(machine)
     card = rca.root_cause_card(unit_uid, date, window_min)
     return _jsonify({"machine": machine, **card})
+
+
+# ---------------------------------------------------------------------------
+# İŞ EMİRLERİ & STOK
+# ---------------------------------------------------------------------------
+
+def _shift_window(date: str):
+    """Vardiya penceresi [gün 21:00 UTC, +24s)."""
+    start = pd.Timestamp(date, tz="UTC") + pd.Timedelta(hours=21)
+    return start, start + pd.Timedelta(hours=24)
+
+
+def list_workorders(machine: str, date: str) -> dict:
+    """Bir makinenin vardiya günündeki iş emri çalışmaları."""
+    unit_uid = _resolve(machine)
+    wo = repository.workorders()
+    start, end = _shift_window(date)
+    m = wo[(wo["unit_uid"] == unit_uid) & (wo["started_on"] >= start) & (wo["started_on"] < end)]
+    m = m.sort_values("started_on")
+    orders = [{
+        "order_no": _native(r.order_no),
+        "is_stock": bool(r.is_stock == "t") if isinstance(r.is_stock, str) else bool(r.is_stock),
+        "started_on": _native(r.started_on),
+        "ended_on": _native(r.ended_on),
+        "duration_ms": _native(r.duration_milliseconds),
+        "stock_cycle_ms": _native(r.stock_cycle),
+        "planned_quantity": _native(r.planned_quantity),
+    } for r in m.itertuples(index=False)]
+    return {"machine": machine, "unit_uid": unit_uid, "date": date,
+            "count": len(orders), "orders": orders}
+
+
+def stock_summary(machine: str, date: str) -> dict:
+    """Vardiya günündeki iş emirlerini program (order_no) bazında özetler."""
+    unit_uid = _resolve(machine)
+    wo = repository.workorders()
+    start, end = _shift_window(date)
+    m = wo[(wo["unit_uid"] == unit_uid) & (wo["started_on"] >= start) & (wo["started_on"] < end)]
+
+    items = []
+    if not m.empty:
+        g = (m.groupby("order_no")
+               .agg(runs=("order_no", "size"),
+                    total_duration_ms=("duration_milliseconds", "sum"),
+                    avg_cycle_ms=("stock_cycle", "mean"),
+                    planned_quantity=("planned_quantity", "sum"))
+               .reset_index()
+               .sort_values("total_duration_ms", ascending=False))
+        items = [{
+            "order_no": _native(r.order_no),
+            "runs": _native(r.runs),
+            "total_duration_ms": _native(r.total_duration_ms),
+            "avg_cycle_ms": _native(r.avg_cycle_ms),
+            "planned_quantity": _native(r.planned_quantity),
+        } for r in g.itertuples(index=False)]
+    return {"machine": machine, "unit_uid": unit_uid, "date": date,
+            "count": len(items), "items": items}

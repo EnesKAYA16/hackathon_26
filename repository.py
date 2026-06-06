@@ -27,6 +27,7 @@ OEE_CSV = DATA_DIR / "trex_mes_oee_summary.csv"
 STOPPAGE_CSV = DATA_DIR / "trex_mes_stoppage_slice.csv"
 READING_DEF_CSV = DATA_DIR / "trex_mes_reading_def.csv"
 ALERT_CSV = DATA_DIR / "trex_mes_alert.csv"
+WORKORDER_CSV = DATA_DIR / "trex_mes_workorder.csv"
 NW_UNIT_CSV = DATA_DIR / "trex_nightwatch_unit.csv"
 NW_READING_DEF_CSV = DATA_DIR / "trex_nightwatch_reading_def.csv"
 
@@ -116,6 +117,18 @@ def nightwatch_reading_def() -> pd.DataFrame:
     )
 
 
+@lru_cache(maxsize=1)
+def workorders() -> pd.DataFrame:
+    """İş emirleri / stok çalışmaları; tarihler datetime'a çevrilmiş."""
+    cols = ["unit_uid", "order_no", "is_work_order", "is_stock",
+            "started_on", "ended_on", "duration_milliseconds",
+            "stock_cycle", "planned_quantity", "exclude_from_oee"]
+    wo = pd.read_csv(WORKORDER_CSV, usecols=cols)
+    wo["started_on"] = pd.to_datetime(wo["started_on"], utc=True, format="ISO8601")
+    wo["ended_on"] = pd.to_datetime(wo["ended_on"], utc=True, format="ISO8601")
+    return wo
+
+
 def warm_cache() -> None:
     """Tüm tabloları önceden belleğe yükler (API başlangıcında çağrılır)."""
     units()
@@ -125,3 +138,4 @@ def warm_cache() -> None:
     alerts()
     nightwatch_units()
     nightwatch_reading_def()
+    workorders()

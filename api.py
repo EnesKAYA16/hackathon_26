@@ -239,7 +239,8 @@ def root():
                           "/oee/baseline", "/oee/pareto", "/oee/whatif",
                           "/finance/assumptions",
                           "/rca/alerts", "/rca/alert-pareto",
-                          "/rca/timeline", "/rca/root-cause"]}
+                          "/rca/timeline", "/rca/root-cause",
+                          "/workorders", "/stock"]}
 
 
 @app.get("/machines", response_model=list[MachineOut], tags=["catalog"])
@@ -315,3 +316,21 @@ def rca_root_cause(machine: str = Query(examples=["Makine 1"]),
                    window_min: int | None = Query(default=None, ge=1, le=240)):
     """Kanıtlı kök neden kartı (alarm + telemetri kanıtı + öneri + downtime köprüsü)."""
     return _guard(lambda: service.get_root_cause(machine, date, window_min))
+
+
+# ---------------------------------------------------------------------------
+# İş emirleri & Stok
+# ---------------------------------------------------------------------------
+
+@app.get("/workorders", tags=["workorder"])
+def workorders(machine: str = Query(examples=["Makine 1"]),
+               date: str = Query(examples=["2025-11-10"])):
+    """Bir makinenin vardiya günündeki iş emri çalışmaları."""
+    return _guard(lambda: service.list_workorders(machine, date))
+
+
+@app.get("/stock", tags=["workorder"])
+def stock(machine: str = Query(examples=["Makine 1"]),
+          date: str = Query(examples=["2025-11-10"])):
+    """Vardiya günündeki iş emirlerinin program (order_no) bazında stok özeti."""
+    return _guard(lambda: service.stock_summary(machine, date))

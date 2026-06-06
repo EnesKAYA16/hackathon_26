@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, pct, fmtHM } from '../api.js'
+import Card from './Card.jsx'
 
 export default function WhatIfPanel({ machine, date, reasons }) {
   const [reason, setReason] = useState('')
@@ -30,15 +31,13 @@ export default function WhatIfPanel({ machine, date, reasons }) {
   }
 
   if (!reasons?.length) return (
-    <div className="card"><h3>What-If Simülasyonu</h3>
+    <Card title="What-If Simülasyonu">
       <div className="muted small">Bu gün için plansız duruş nedeni yok.</div>
-    </div>
+    </Card>
   )
 
   return (
-    <div className="card">
-      <h3>What-If Simülasyonu</h3>
-
+    <Card title="What-If Simülasyonu">
       <div style={{ marginBottom: 10 }}>
         <label>Duruş nedeni</label>
         <select value={reason} onChange={(e) => setReason(e.target.value)} style={{ width: '100%' }}>
@@ -84,7 +83,7 @@ export default function WhatIfPanel({ machine, date, reasons }) {
 
       {err && <div className="err" style={{ marginTop: 10 }}>{err}</div>}
       {result && <Result r={result} />}
-    </div>
+    </Card>
   )
 }
 
@@ -122,9 +121,9 @@ function Result({ r }) {
 
 function Stat({ label, value, delta, up }) {
   return (
-    <div className="card" style={{ background: 'var(--panel2)', padding: 12 }}>
-      <div className="small muted">{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, margin: '4px 0' }}>{value}</div>
+    <div className="statbox">
+      <div className="lbl">{label}</div>
+      <div className="big">{value}</div>
       <div className={up ? 'delta-up' : 'delta-down'}>{delta}</div>
     </div>
   )

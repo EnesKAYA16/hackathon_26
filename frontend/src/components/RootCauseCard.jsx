@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, fmtHM } from '../api.js'
+import Card from './Card.jsx'
 
 const time = (iso) => (iso ? new Date(iso).toLocaleTimeString('tr-TR', { hour12: false }) : '')
 const day = (iso) => (iso ? iso.slice(0, 10) : '')
@@ -20,18 +21,14 @@ export default function RootCauseCard({ machine, alarmDates }) {
       .then(setCard).catch((e) => setErr(e.message)).finally(() => setLoading(false))
   }, [machine, date])
 
-  return (
-    <div className="card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={{ margin: 0 }}>Kök Neden Kartı (RCA)</h3>
-        <div>
-          <label>Alarm günü</label>
-          <select value={date} onChange={(e) => setDate(e.target.value)}>
-            {(alarmDates || []).map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-      </div>
+  const dateSelect = (
+    <select value={date} onChange={(e) => setDate(e.target.value)}>
+      {(alarmDates || []).map((d) => <option key={d} value={d}>{d}</option>)}
+    </select>
+  )
 
+  return (
+    <Card title="Kök Neden Kartı (RCA)" action={dateSelect}>
       {loading && <div className="spin">Telemetri sorgulanıyor…</div>}
       {err && <div className="err" style={{ marginTop: 10 }}>{err}</div>}
 
@@ -72,7 +69,7 @@ export default function RootCauseCard({ machine, alarmDates }) {
           )}
         </>
       )}
-    </div>
+    </Card>
   )
 }
 
