@@ -62,19 +62,21 @@ def estimate_pieces_per_hour(product_sum: float, running_hours: float,
 def compute_financial_impact(recovered_hours: float,
                              product_sum: float,
                              running_hours: float,
-                             a: FinanceAssumptions) -> dict:
+                             a: FinanceAssumptions,
+                             extra_pieces_perf: float = 0.0) -> dict:
     """
-    What-If'ten gelen geri kazanılan saati finansal etkiye çevirir.
+    What-If'in teknik etkisini finansal etkiye çevirir.
 
     Args:
-        recovered_hours: What-If'in geri kazandırdığı plansız duruş saati.
+        recovered_hours: A kaldıracının geri kazandırdığı plansız duruş saati.
         product_sum: Baz gündeki üretilen iyi parça (pieces/hour tahmini için).
         running_hours: Baz gündeki çalışma saati (RunTime).
         a: FinanceAssumptions.
+        extra_pieces_perf: P (performans) iyileştirmesinden gelen ek parça.
     """
     pieces_per_hour = estimate_pieces_per_hour(product_sum, running_hours,
                                                a.pieces_per_hour_override)
-    extra_pieces = recovered_hours * pieces_per_hour
+    extra_pieces = recovered_hours * pieces_per_hour + extra_pieces_perf
     gross_benefit = extra_pieces * a.contribution_margin_per_piece
     downtime_saving = recovered_hours * a.downtime_cost_per_hour
     daily_benefit = gross_benefit + downtime_saving

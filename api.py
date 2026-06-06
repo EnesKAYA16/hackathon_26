@@ -107,8 +107,11 @@ class FinanceIn(BaseModel):
 class WhatIfRequest(BaseModel):
     machine: str = Field(examples=["Makine 1"])
     date: str = Field(examples=["2025-11-10"])
-    durus_nedeni: str = Field(examples=["System Offline"])
-    azaltma_yuzdesi: float = Field(ge=0.0, le=1.0, examples=[0.20])
+    durus_nedeni: str | None = Field(default=None, examples=["System Offline"])
+    azaltma_yuzdesi: float = Field(default=0.0, ge=0.0, le=1.0, examples=[0.20])  # W1
+    reclassify: bool = Field(default=False, description="W2: PLANSIZ->PLANLI")    # W2
+    cycle_improvement_pct: float = Field(default=0.0, ge=0.0, lt=1.0, examples=[0.10])  # W3 (P)
+    scrap_rate: float = Field(default=0.0, ge=0.0, lt=1.0, examples=[0.03])       # W4 (Q)
     finance: FinanceIn | None = Field(default=None,
                                       description="Opsiyonel finansal varsayımlar")
 
@@ -142,6 +145,8 @@ class StateOut(BaseModel):
 
 class DeltaOut(BaseModel):
     availability_pp: float
+    performance_pp: float
+    quality_pp: float
     oee_pp: float
     oee_relative_pct: float
 
@@ -150,8 +155,11 @@ class WhatIfOut(BaseModel):
     machine: str
     unit_uid: str
     date: str
-    durus_nedeni: str
+    durus_nedeni: str | None
     azaltma_yuzdesi: float
+    reclassify: bool
+    cycle_improvement_pct: float
+    scrap_rate: float
     share: float
     reason_official_ms: float
     reduced_ms: float
@@ -159,6 +167,7 @@ class WhatIfOut(BaseModel):
     before: StateOut
     after: StateOut
     delta: DeltaOut
+    waterfall: dict
     financial: FinancialOut
 
 
@@ -239,8 +248,9 @@ def root():
                           "/oee/baseline", "/oee/pareto", "/oee/whatif",
                           "/finance/assumptions",
                           "/rca/alerts", "/rca/alert-pareto",
-                          "/rca/timeline", "/rca/root-cause",
-                          "/workorders", "/stock"]}
+                          "/rca/timeline", "/rca/root-cause", "/rca/deviation",
+                          "/workorders", "/stock",
+                          "/fleet/overview", "/fleet/alarm-patterns"]}
 
 
 @app.get("/machines", response_model=list[MachineOut], tags=["catalog"])
@@ -281,7 +291,9 @@ def whatif(req: WhatIfRequest):
     """Bir duruş nedenini X% azaltmanın OEE + finansal (ROI) etkisini simüle eder."""
     finance_inputs = req.finance.model_dump() if req.finance else None
     return _guard(lambda: service.run_whatif(
-        req.machine, req.date, req.durus_nedeni, req.azaltma_yuzdesi, finance_inputs))
+        req.machine, req.date, req.durus_nedeni, req.azaltma_yuzdesi, finance_inputs,
+        reclassify=req.reclassify, cycle_improvement_pct=req.cycle_improvement_pct,
+        scrap_rate=req.scrap_rate))
 
 
 # ---------------------------------------------------------------------------
@@ -334,3 +346,25 @@ def stock(machine: str = Query(examples=["Makine 1"]),
           date: str = Query(examples=["2025-11-10"])):
     """Vardiya günündeki iş emirlerinin program (order_no) bazında stok özeti."""
     return _guard(lambda: service.stock_summary(machine, date))
+
+
+@app.get("/rca/deviation", tags=["rca"])
+def rca_deviation(machine: str = Query(examples=["Makine 1"]),
+                  center: str = Query(examples=["2026-01-12 04:47:11"]),
+                  signal: str = Query("CYCLE_TIME_MS"),
+                  window_min: int | None = Query(default=None, ge=1, le=240)):
+    """Telemetri sinyalinin olay anındaki istatistiksel sapması (Teknik 3)."""
+    return _guard(lambda: service.get_deviation(machine, center, signal, window_min))
+
+
+@app.get("/fleet/overview", tags=["fleet"])
+def fleet_overview(date: str = Query(examples=["2025-11-10"])):
+    """Tüm makinelerin o gündeki OEE/A özetini (en kötü üstte) sıralar."""
+    return _guard(lambda: service.fleet_overview(date))
+
+
+@app.get("/fleet/alarm-patterns", tags=["fleet"])
+def fleet_alarm_patterns(min_machines: int = Query(2, ge=1, le=12),
+                         top_n: int = Query(15, ge=1, le=100)):
+    """Birden fazla makinede görülen ortak alarm örüntüleri."""
+    return _guard(lambda: service.fleet_alarm_patterns(min_machines, top_n))

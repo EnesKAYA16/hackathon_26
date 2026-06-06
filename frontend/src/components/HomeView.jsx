@@ -1,3 +1,4 @@
+import { Clock, ArrowRight } from 'lucide-react'
 import Card from './Card.jsx'
 import Gauge from './Gauge.jsx'
 import Donut from './Donut.jsx'
@@ -60,7 +61,7 @@ export default function HomeView({ baseline, onGoStoppages, dark }) {
       </Card>
 
       <Card title="Makine Kullanılabilirliği"
-            action={<span className="link" onClick={onGoStoppages}>Duruşlar →</span>}>
+            action={<span className="link" onClick={onGoStoppages} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>Duruşlar <ArrowRight size={13} /></span>}>
         <div className="avail-row">
           <div className="chips">
             <Chip tone="blue" label="Çalışma Süresi" value={fmtHM(wt)} />
@@ -74,7 +75,7 @@ export default function HomeView({ baseline, onGoStoppages, dark }) {
           </div>
         </div>
 
-        <div className="section-sub">🕐 Zaman Dağılımı</div>
+        <div className="section-sub"><Clock size={15} /> Zaman Dağılımı</div>
         <div className="timedist">
           <span style={{ width: p(rt), background: '#25b06b' }} />
           <span style={{ width: p(ps), background: '#f0a52b' }} />

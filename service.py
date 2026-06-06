@@ -180,33 +180,40 @@ def _coerce_finance(d: dict | None) -> dict:
     return out
 
 
-def run_whatif(machine: str, date: str, durus_nedeni: str, azaltma_yuzdesi: float,
-               finance_inputs: dict | None = None) -> dict:
+def run_whatif(machine: str, date: str, durus_nedeni: str | None = None,
+               azaltma_yuzdesi: float = 0.0, finance_inputs: dict | None = None,
+               reclassify: bool = False, cycle_improvement_pct: float = 0.0,
+               scrap_rate: float = 0.0) -> dict:
     """
-    Spesifik bir duruş nedenini azaltmanın OEE + FİNANSAL etkisi (JSON-güvenli).
+    OEE'nin A/P/Q kaldıraçlarında What-If + FİNANSAL etki (JSON-güvenli).
     finance_inputs verilmezse varsayılan (docs/02) varsayımlar kullanılır.
     """
     unit_uid = _resolve(machine)
-    sim = whatif.simulate_whatif(unit_uid, date, durus_nedeni, azaltma_yuzdesi)
+    sim = whatif.simulate_whatif(unit_uid, date, durus_nedeni, azaltma_yuzdesi,
+                                 reclassify=reclassify,
+                                 cycle_improvement_pct=cycle_improvement_pct,
+                                 scrap_rate=scrap_rate)
 
     oee_base = float(sim["OEE_base"])
     rel = (sim["dOEE"] / oee_base * 100) if oee_base else 0.0
 
-    # --- Finansal katman ---
+    # --- Finansal katman (A geri kazanımı + P ekstra parça) ---
     assumptions = fin.FinanceAssumptions(**(finance_inputs or {}))
     financial = fin.compute_financial_impact(
         recovered_hours=sim["recovered_hours"],
         product_sum=sim["product_sum"],
         running_hours=sim["running_hours"],
         a=assumptions,
+        extra_pieces_perf=sim["extra_pieces_perf"],
     )
 
     return {
-        "machine": machine,
-        "unit_uid": unit_uid,
-        "date": date,
+        "machine": machine, "unit_uid": unit_uid, "date": date,
         "durus_nedeni": _native(sim["durus_nedeni"]),
         "azaltma_yuzdesi": _native(sim["azaltma_yuzdesi"]),
+        "reclassify": bool(sim["reclassify"]),
+        "cycle_improvement_pct": _native(sim["cycle_improvement_pct"]),
+        "scrap_rate": _native(sim["scrap_rate"]),
         "share": _native(sim["share"]),
         "reason_official_ms": _native(sim["reason_official_ms"]),
         "reduced_ms": _native(sim["reduced_ms"]),
@@ -214,21 +221,28 @@ def run_whatif(machine: str, date: str, durus_nedeni: str, azaltma_yuzdesi: floa
         "before": {
             "unplanned_stop_ms": _native(sim["official_unplanned"]),
             "availability": _native(sim["A_base"]),
-            "performance": _native(sim["P"]),
-            "quality": _native(sim["Q"]),
+            "performance": _native(sim["P_base"]),
+            "quality": _native(sim["Q_base"]),
             "oee": _native(sim["OEE_base"]),
         },
         "after": {
             "unplanned_stop_ms": _native(sim["new_unplanned"]),
             "availability": _native(sim["A_new"]),
-            "performance": _native(sim["P"]),
-            "quality": _native(sim["Q"]),
+            "performance": _native(sim["P_new"]),
+            "quality": _native(sim["Q_new"]),
             "oee": _native(sim["OEE_new"]),
         },
         "delta": {
             "availability_pp": _native(sim["dA"] * 100),
+            "performance_pp": _native(sim["dP"] * 100),
+            "quality_pp": _native(sim["dQ"] * 100),
             "oee_pp": _native(sim["dOEE"] * 100),
             "oee_relative_pct": _native(rel),
+        },
+        "waterfall": {
+            "a": _native(sim["waterfall"]["a"] * 100),
+            "p": _native(sim["waterfall"]["p"] * 100),
+            "q": _native(sim["waterfall"]["q"] * 100),
         },
         "financial": _coerce_finance(financial),
     }
@@ -331,3 +345,60 @@ def stock_summary(machine: str, date: str) -> dict:
         } for r in g.itertuples(index=False)]
     return {"machine": machine, "unit_uid": unit_uid, "date": date,
             "count": len(items), "items": items}
+
+
+# ---------------------------------------------------------------------------
+# RCA — Referans Sapması (Teknik 3)
+# ---------------------------------------------------------------------------
+
+def get_deviation(machine: str, center: str, signal: str = "CYCLE_TIME_MS",
+                  window_min: int | None = None) -> dict:
+    """Bir telemetri sinyalinin olay anındaki istatistiksel sapması."""
+    unit_uid = _resolve(machine)
+    dev = rca.deviation_analysis(unit_uid, center, signal_name=signal, window_min=window_min)
+    return _jsonify({"machine": machine, "unit_uid": unit_uid, "center": center, **dev})
+
+
+# ---------------------------------------------------------------------------
+# FİLO (çapraz-makine, Platinum)
+# ---------------------------------------------------------------------------
+
+def fleet_overview(date: str) -> dict:
+    """Tüm etkin makinelerin o gündeki OEE/A/plansız özetini OEE'ye göre sıralar."""
+    rows = []
+    for m in list_machines():
+        if not m["is_enabled"]:
+            continue
+        try:
+            b = get_baseline(m["name"], date)
+        except ValueError:
+            continue  # o gün veri yok
+        rows.append({
+            "machine": m["name"], "unit_uid": m["unit_uid"],
+            "oee": b["oee"], "availability": b["availability"]["A"],
+            "performance": b["performance"]["P"], "quality": b["quality"]["Q"],
+            "unplanned_stop_ms": b["availability"]["unplanned_stop_ms"],
+            "unplanned_stop_h": b["availability"]["unplanned_stop_h"],
+        })
+    rows.sort(key=lambda r: r["oee"])  # en kötü OEE üstte (öncelik)
+    return {"date": date, "count": len(rows), "machines": rows}
+
+
+def fleet_alarm_patterns(min_machines: int = 2, top_n: int = 15) -> dict:
+    """Birden fazla makinede görülen ortak alarm örüntüleri (filo geneli)."""
+    al = repository.alerts()
+    units = core.load_units().set_index("uid")["name"].to_dict()
+    g = al.groupby("message").agg(
+        total=("message", "size"),
+        machines=("unit_uid", lambda s: sorted(set(s))),
+    ).reset_index()
+    g["machine_count"] = g["machines"].apply(len)
+    g = g[g["machine_count"] >= min_machines].sort_values(
+        ["machine_count", "total"], ascending=False).head(top_n)
+    items = [{
+        "message": _native(r.message),
+        "total": _native(r.total),
+        "machine_count": _native(r.machine_count),
+        "machines": [units.get(u, u) for u in r.machines],
+    } for r in g.itertuples(index=False)]
+    return {"count": len(items), "items": items}

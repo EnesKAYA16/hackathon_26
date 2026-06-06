@@ -187,78 +187,108 @@ def print_pareto(machine: str, target_date: str, pareto: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 
 def simulate_whatif(unit_uid: str, target_date: str,
-                    durus_nedeni: str, azaltma_yuzdesi: float) -> dict:
+                    durus_nedeni: str | None = None, azaltma_yuzdesi: float = 0.0,
+                    reclassify: bool = False,
+                    cycle_improvement_pct: float = 0.0,
+                    scrap_rate: float = 0.0) -> dict:
     """
-    Spesifik bir plansız duruş nedenini azaltmanın OEE etkisini simüle eder.
+    OEE'nin ÜÇ kaldıracında (A, P, Q) What-If senaryolarını simüle eder.
 
-    Args:
-        durus_nedeni: reading_def display_text (örn. "System Offline", "Duruş").
-        azaltma_yuzdesi: 0.0–1.0 arası (örn. 0.20 = %20 azaltma).
+    Kaldıraçlar (slayt 001 senaryoları W1–W4):
+      W1 (A) durus_nedeni + azaltma_yuzdesi: plansız nedeni %X azalt.
+      W2 (A) durus_nedeni + reclassify=True : nedeni PLANSIZ->PLANLI taşı
+              (run-time değişmez, payda küçülür, A izole artar).
+      W3 (P) cycle_improvement_pct: çevrim süresini %X iyileştir
+              -> P_new = P / (1 - X) (1.0'da sınırlı).
+      W4 (Q) scrap_rate: sentetik fire oranı -> Q_new = 1 - fire.
 
-    Mantık:
-        1) Resmi UnPlannedStop, event-log Pareto oranlarıyla nedenlere dağıtılır.
-        2) Seçilen nedenin payı, azaltma_yuzdesi kadar düşürülür.
-        3) Yeni UnPlannedStop = resmi toplam - azaltılan miktar.
-        4) Yeni A = (WorkTotal - PlannedStop - YeniUnPlanned)/(WorkTotal - PlannedStop)
-        5) Yeni OEE = Yeni A x mevcut P x mevcut Q.  ΔOEE = Yeni - Eski.
+    Çıktı ayrıca ΔOEE'yi A/P/Q katkılarına ayrıştıran 'waterfall' içerir.
     """
     if not 0.0 <= azaltma_yuzdesi <= 1.0:
-        raise ValueError("azaltma_yuzdesi 0.0 ile 1.0 arasında olmalı (örn. 0.20).")
+        raise ValueError("azaltma_yuzdesi 0.0 ile 1.0 arasında olmalı.")
+    if not 0.0 <= cycle_improvement_pct < 1.0:
+        raise ValueError("cycle_improvement_pct 0.0 ile 1.0 (hariç) arasında olmalı.")
+    if not 0.0 <= scrap_rate < 1.0:
+        raise ValueError("scrap_rate 0.0 ile 1.0 (hariç) arasında olmalı.")
 
     # --- Resmi baz (oee_summary) ---
     oee = load_oee_summary()
-    base_row = select_baseline_row(oee, unit_uid, target_date)
-    bd = build_oee_breakdown(base_row)
-
+    bd = build_oee_breakdown(select_baseline_row(oee, unit_uid, target_date))
     work_total = bd["availability"]["WorkTotal_ms"]
     planned_stop = bd["availability"]["PlannedStop_ms"]
     official_unplanned = bd["availability"]["UnPlannedStop_ms"]
     A_base = bd["availability"]["A"]
-    P = bd["performance"]["P"]   # mevcut P (trexCloud resmi değeri)
-    Q = bd["quality"]["Q"]       # mevcut Q (=1)
-    OEE_base = A_base * P * Q
+    P_base = bd["performance"]["P"]
+    Q_base = bd["quality"]["Q"]
+    OEE_base = A_base * P_base * Q_base
+    product_sum = bd["quality"]["ProductSum"]
 
-    # --- Neden bazlı paylar (event-log) ---
-    agg = get_unplanned_by_reason(unit_uid, target_date)
-    slice_total = agg["total_ms"].sum()
+    # --- A kaldıracı (W1 / W2) ---
+    share = 0.0
+    reason_official_ms = 0.0
+    reduced_ms = 0.0
+    new_unplanned = official_unplanned
+    new_planned = planned_stop
+    reason_label = None
 
-    # Seçilen nedeni isimle eşle (büyük/küçük harf duyarsız)
-    match = agg[agg["reason"].str.casefold() == durus_nedeni.casefold()]
-    if match.empty:
-        secenekler = ", ".join(f"'{r}'" for r in agg["reason"])
-        raise ValueError(f"'{durus_nedeni}' bulunamadı. Geçerli nedenler: {secenekler}")
+    if durus_nedeni:
+        agg = get_unplanned_by_reason(unit_uid, target_date)
+        slice_total = agg["total_ms"].sum()
+        match = agg[agg["reason"].str.casefold() == durus_nedeni.casefold()]
+        if match.empty:
+            secenekler = ", ".join(f"'{r}'" for r in agg["reason"])
+            raise ValueError(f"'{durus_nedeni}' bulunamadı. Geçerli nedenler: {secenekler}")
+        reason_label = match["reason"].iloc[0]
+        share = float(match["total_ms"].iloc[0]) / slice_total if slice_total else 0.0
+        reason_official_ms = share * official_unplanned
 
-    reason_slice_ms = float(match["total_ms"].iloc[0])
-    share = reason_slice_ms / slice_total if slice_total else 0.0
+        if reclassify:  # W2: tamamını PLANLI'ya taşı (run-time sabit, A artar)
+            new_unplanned = official_unplanned - reason_official_ms
+            new_planned = planned_stop + reason_official_ms
+            reduced_ms = 0.0  # üretim zamanı geri kazanılmaz
+        else:           # W1: %X azalt
+            reduced_ms = reason_official_ms * azaltma_yuzdesi
+            new_unplanned = official_unplanned - reduced_ms
 
-    # Resmi toplamı oransal dağıt -> bu nedenin resmi karşılığı
-    reason_official_ms = share * official_unplanned
+    A_new = compute_availability(work_total, new_planned, new_unplanned)["A"]
 
-    # --- Azaltma uygula ---
-    reduced_ms = reason_official_ms * azaltma_yuzdesi
-    new_unplanned = official_unplanned - reduced_ms
+    # --- P kaldıracı (W3) ---
+    P_new = min(P_base / (1 - cycle_improvement_pct), 1.0) if cycle_improvement_pct > 0 else P_base
 
-    # --- Yeni A / OEE ---
-    new_avail = compute_availability(work_total, planned_stop, new_unplanned)
-    A_new = new_avail["A"]
-    OEE_new = A_new * P * Q
+    # --- Q kaldıracı (W4) ---
+    Q_new = 1.0 - scrap_rate if scrap_rate > 0 else Q_base
+
+    OEE_new = A_new * P_new * Q_new
+
+    # --- Etki Şelalesi: ΔOEE = ΔA katkı + ΔP katkı + ΔQ katkı ---
+    a_contrib = (A_new - A_base) * P_base * Q_base
+    p_contrib = A_new * (P_new - P_base) * Q_base
+    q_contrib = A_new * P_new * (Q_new - Q_base)
+
+    # W3 performans iyileştirmesinden gelen ekstra parça (finans için)
+    extra_pieces_perf = product_sum * (P_new / P_base - 1) if P_base > 0 else 0.0
 
     return {
-        "durus_nedeni": match["reason"].iloc[0],
+        "durus_nedeni": reason_label,
         "azaltma_yuzdesi": azaltma_yuzdesi,
+        "reclassify": reclassify,
+        "cycle_improvement_pct": cycle_improvement_pct,
+        "scrap_rate": scrap_rate,
         "share": share,
         "reason_official_ms": reason_official_ms,
         "reduced_ms": reduced_ms,
         "work_total": work_total,
-        "planned_stop": planned_stop,
-        "official_unplanned": official_unplanned,
-        "new_unplanned": new_unplanned,
+        "planned_stop": planned_stop, "new_planned": new_planned,
+        "official_unplanned": official_unplanned, "new_unplanned": new_unplanned,
         "A_base": A_base, "A_new": A_new, "dA": A_new - A_base,
-        "P": P, "Q": Q,
+        "P_base": P_base, "P_new": P_new, "dP": P_new - P_base,
+        "Q_base": Q_base, "Q_new": Q_new, "dQ": Q_new - Q_base,
+        "P": P_base, "Q": Q_base,  # geriye dönük uyumluluk (CLI)
         "OEE_base": OEE_base, "OEE_new": OEE_new, "dOEE": OEE_new - OEE_base,
+        "waterfall": {"a": a_contrib, "p": p_contrib, "q": q_contrib},
         "recovered_hours": ms_to_hours(reduced_ms),
-        # Finansal katman (finance.py) için baz üretim göstergeleri:
-        "product_sum": bd["quality"]["ProductSum"],
+        "extra_pieces_perf": extra_pieces_perf,
+        "product_sum": product_sum,
         "running_hours": ms_to_hours(bd["availability"]["RunTime_ms"]),
     }
 

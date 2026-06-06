@@ -142,8 +142,94 @@ def build_timeline(unit_uid: str, center, window_min: int | None = None) -> dict
 
 
 # ---------------------------------------------------------------------------
+# TEKNİK 3: REFERANS SAPMASI (istatistiksel anomali)
+# ---------------------------------------------------------------------------
+
+def deviation_analysis(unit_uid: str, center, signal_name: str = "CYCLE_TIME_MS",
+                       window_min: int | None = None,
+                       baseline_window_min: int = 360, z_threshold: float = 2.0) -> dict:
+    """
+    Bir telemetri sinyalinin (vars. CYCLE_TIME_MS) baz ortalamadan istatistiksel
+    sapmasını bulur (Gold kriteri). Geniş bir pencerede ortalama/std hesaplar,
+    odak penceresindeki noktaların z-skorunu çıkarır, |z|>eşik olanları işaretler.
+    """
+    window_min = window_min or settings.rca_window_minutes
+    center = pd.Timestamp(center)
+    if center.tzinfo is None:
+        center = center.tz_localize("UTC")
+    wide_start = center - pd.Timedelta(minutes=baseline_window_min)
+    wide_end = center + pd.Timedelta(minutes=baseline_window_min)
+
+    tel = nw.telemetry_window(unit_uid, wide_start, wide_end, signal_names=[signal_name])
+    if tel.empty:
+        return {"signal": signal_name, "available": False,
+                "summary": f"{signal_name} için bu pencerede telemetri yok."}
+
+    tel = tel.copy()
+    tel["num"] = pd.to_numeric(tel["value"], errors="coerce")
+    tel = tel.dropna(subset=["num"])
+    mean = float(tel["num"].mean())
+    std = float(tel["num"].std()) or 0.0
+
+    foc_start = center - pd.Timedelta(minutes=window_min)
+    foc_end = center + pd.Timedelta(minutes=window_min)
+    focus = tel[(tel["time"] >= foc_start) & (tel["time"] <= foc_end)].copy()
+    focus["z"] = (focus["num"] - mean) / std if std > 0 else 0.0
+
+    anomalies = focus[focus["z"].abs() > z_threshold]
+    points = [{"time": t, "value": float(v), "z": float(z)}
+              for t, v, z in zip(focus["time"], focus["num"], focus["z"])]
+    max_z = float(focus["z"].abs().max()) if not focus.empty else 0.0
+
+    summary = (
+        f"{signal_name}: baz ortalama {mean:,.0f} ± {std:,.0f}. "
+        + (f"Olay penceresinde {len(anomalies)} anomali (|z|>{z_threshold}, en yüksek |z|={max_z:.1f}) "
+           f"-> istatistiksel sapma kök neden kanıtını destekliyor."
+           if len(anomalies) else
+           f"Olay penceresinde belirgin sapma yok (en yüksek |z|={max_z:.1f}).")
+    )
+    return {
+        "signal": signal_name, "available": True,
+        "baseline_mean": mean, "baseline_std": std,
+        "z_threshold": z_threshold, "anomaly_count": int(len(anomalies)),
+        "max_abs_z": max_z, "points": points, "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # KÖK NEDEN KARTI
 # ---------------------------------------------------------------------------
+
+def _build_hypotheses(primary_msg: str, recurrence: int, run_stopped: bool,
+                      downtime_context: dict | None) -> list[dict]:
+    """
+    Birincil alarm için hipotez–kanıt–sonuç–ihtimal matrisi üretir (kural tabanlı).
+    """
+    hyps = []
+    # H1: Tekrar eden donanım/sistem arızası
+    hyps.append({
+        "hypothesis": "Tekrar eden donanım/sistem arızası (kalıcı kök neden).",
+        "expected": "Aynı alarm geçmişte çok sayıda tekrarlamış olmalı.",
+        "data_result": f"{recurrence} kez tekrarlamış.",
+        "likelihood": "Yüksek" if recurrence >= 5 else ("Orta" if recurrence >= 2 else "Düşük"),
+    })
+    # H2: Alarm üretimi durdurdu (anlık etki)
+    hyps.append({
+        "hypothesis": "Alarm makineyi anında durdurdu (üretim kaybı).",
+        "expected": "Alarm anında run-durumu (STATINFO_RUN) 0 olmalı.",
+        "data_result": "Run-durumu 0 (durdu)." if run_stopped else "Net duruş kanıtı yok.",
+        "likelihood": "Yüksek" if run_stopped else "Düşük",
+    })
+    # H3: Operatör/sınıflandırma kaynaklı (tanımsız duruş ağırlığı)
+    top = (downtime_context or {}).get("top_reasons", [])
+    undefined_heavy = any("Undefined" in r["reason"] or "Tanımsız" in r["reason"] for r in top)
+    hyps.append({
+        "hypothesis": "Operatör/sınıflandırma kaynaklı (mekanik arıza değil).",
+        "expected": "Tanımsız (Undefined) duruşların payı yüksek olmalı.",
+        "data_result": "Tanımsız duruş baskın." if undefined_heavy else "Tanımsız duruş baskın değil.",
+        "likelihood": "Orta" if undefined_heavy else "Düşük",
+    })
+    return hyps
 
 def _shift_date_of(ts: pd.Timestamp) -> str:
     """Bir an'ın ait olduğu vardiya gününü (21:00 UTC sınırı) döndürür (YYYY-MM-DD)."""
@@ -233,10 +319,13 @@ def root_cause_card(unit_uid: str, date: str, window_min: int | None = None) -> 
         f"{date}: '{primary['message']}' (toplam {primary['recurrence_total']} kez tekrarlamış). "
         f"{evidence}"
     )
+    hypotheses = _build_hypotheses(primary["message"], primary["recurrence_total"],
+                                   stopped, downtime_context)
 
     return {
         "unit_uid": unit_uid, "date": date, "has_alarm": True,
         "primary_time": primary_time, "summary": summary,
         "evidence": evidence, "run_stopped_at_alarm": stopped,
         "alarms": alarms, "timeline": timeline, "downtime_context": downtime_context,
+        "hypotheses": hypotheses,
     }

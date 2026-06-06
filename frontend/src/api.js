@@ -40,6 +40,9 @@ export const api = {
   rootCause: (m, d, w) => get(`/rca/root-cause?machine=${q(m)}&date=${d}${w ? `&window_min=${w}` : ''}`),
   workorders: (m, d) => get(`/workorders?machine=${q(m)}&date=${d}`),
   stock: (m, d) => get(`/stock?machine=${q(m)}&date=${d}`),
+  deviation: (m, center, signal) => get(`/rca/deviation?machine=${q(m)}&center=${q(center)}${signal ? `&signal=${q(signal)}` : ''}`),
+  fleetOverview: (d) => get(`/fleet/overview?date=${d}`),
+  fleetAlarmPatterns: () => get('/fleet/alarm-patterns'),
 }
 
 // Yardımcılar

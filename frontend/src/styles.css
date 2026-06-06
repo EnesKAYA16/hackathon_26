@@ -12,6 +12,7 @@
   --amber: #f0a52b; --amber-soft: #fdf3e0;
   --red: #e2483d; --red-soft: #fdecea;
   --blue-soft: #eaf1ff;
+  --glass: rgba(255,255,255,.7);
   --shadow: 0 1px 2px rgba(16,24,40,.04), 0 6px 20px rgba(16,24,40,.06);
 }
 
@@ -22,15 +23,17 @@ body {
   font-size: 14px; line-height: 1.5;
 }
 
-/* ===== Üst header ===== */
+/* ===== Üst header (glassmorphism) ===== */
 .tc-header {
-  background: var(--panel); border-bottom: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 22px; position: sticky; top: 0; z-index: 20;
 }
 .tc-logo { display: flex; align-items: center; gap: 9px; font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
-.tc-logo .mark { width: 26px; height: 26px; display: grid; place-items: center;
-  color: var(--accent); font-size: 22px; font-weight: 900; }
+.tc-logo .mark { color: var(--accent); }
 .tc-logo .t1 { color: var(--text); } .tc-logo .t2 { color: var(--accent); }
 .tc-head-right { display: flex; align-items: center; gap: 16px; }
 .tc-search { display: flex; align-items: center; gap: 8px; background: var(--panel2);
@@ -39,12 +42,18 @@ body {
   border-radius: 5px; padding: 1px 6px; font-size: 11px; font-weight: 600; }
 .tc-ico { color: var(--muted); font-size: 15px; display: flex; align-items: center; gap: 6px; }
 
-/* ===== Araç çubuğu (makine + sekmeler) ===== */
+/* ===== Araç çubuğu (makine + sekmeler, glassmorphism) ===== */
 .tc-toolbar {
-  background: var(--panel); border-bottom: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border-bottom: 1px solid var(--border);
   display: flex; align-items: center; gap: 14px; padding: 10px 22px; flex-wrap: wrap;
   position: sticky; top: 57px; z-index: 19;
 }
+.tc-tab svg, .tc-ico svg, .tc-search svg, .field .ic, .datepill svg { vertical-align: middle; }
+.tc-tab { line-height: 1; }
+.tc-tab svg, .tc-ico svg { display: inline-block; }
 .tc-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tc-tab {
   display: flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 9px;
@@ -195,7 +204,22 @@ details { margin-top: 10px; } details summary { cursor: pointer; color: var(--ac
   --amber: #e0a23a; --amber-soft: #342916;
   --red: #f0645a; --red-soft: #3a201d;
   --blue-soft: #1b2c47;
+  --glass: rgba(18,24,32,.62);
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.4);
 }
 [data-theme="dark"] body { background: var(--bg); }
 [data-theme="dark"] .rankcard.t2 { background: #2e2a12; } [data-theme="dark"] .rankcard.t2 .pb>span { background: #d9b920; }
+
+/* ===== What-If kaldıraçları ===== */
+.lever { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.lever:first-of-type { padding-top: 0; }
+.lever-head { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 8px; }
+.chk { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--text);
+  font-size: 13px; font-weight: 500; cursor: pointer; }
+.chk input { width: 15px; height: 15px; accent-color: var(--accent); }
+input[type="range"] { width: 100%; accent-color: var(--accent); height: 5px; cursor: pointer; }
+
+.apq { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.apq-cell { background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px; text-align: center; }
