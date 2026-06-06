@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Home, Pause, ClipboardList, Package, Bell, LayoutGrid,
-  Sun, Moon, Factory, Calendar, Gauge, PanelLeft,
+  Sun, Moon, Factory, Gauge, PanelLeft,
 } from 'lucide-react'
 import { api } from './api.js'
 import HomeView from './components/HomeView.jsx'
@@ -13,6 +13,7 @@ import StockView from './components/StockView.jsx'
 import FleetView from './components/FleetView.jsx'
 import StoppageTrendChart from './components/StoppageTrendChart.jsx'
 import OeeTrendChart from './components/OeeTrendChart.jsx'
+import DateRangePicker from './components/DateRangePicker.jsx'
 
 const TABS = [
   { id: 'home', label: 'Ana Sayfa', Icon: Home },
@@ -27,7 +28,7 @@ export default function App() {
   const [machines, setMachines] = useState([])
   const [machine, setMachine] = useState('')
   const [dates, setDates] = useState([])
-  const [date, setDate] = useState('')
+  const [range, setRange] = useState({ start: '', end: '' })
   const [tab, setTab] = useState('home')
 
   const [baseline, setBaseline] = useState(null)
@@ -35,7 +36,6 @@ export default function App() {
   const [alarmDates, setAlarmDates] = useState([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState(null)
-  const [refreshedAt, setRefreshedAt] = useState('')
 
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light')
   useEffect(() => {
@@ -46,6 +46,13 @@ export default function App() {
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar') === '1')
   useEffect(() => { localStorage.setItem('sidebar', collapsed ? '1' : '0') }, [collapsed])
+
+  // Tekil-gün görünümleri: aralık bitişi <= en son VERİ günü (verisiz uca denk gelirse bozulmasın)
+  const date = useMemo(() => {
+    if (!dates.length) return range.end
+    const within = dates.filter((d) => d <= range.end)
+    return within.length ? within[within.length - 1] : dates[0]
+  }, [dates, range.end])
 
   useEffect(() => {
     api.machines().then((ms) => {
@@ -59,7 +66,10 @@ export default function App() {
     if (!machine) return
     api.dates(machine).then((ds) => {
       setDates(ds)
-      setDate(ds.includes('2025-11-10') ? '2025-11-10' : ds[ds.length - 1] || '')
+      const end = ds.includes('2025-11-10') ? '2025-11-10' : ds[ds.length - 1] || ''
+      const endIdx = ds.indexOf(end)
+      const start = ds[Math.max(0, endIdx - 29)] || end
+      setRange({ start, end })
     }).catch((e) => setErr(e.message))
     api.alerts(machine).then((res) => {
       const uniq = [...new Set(res.alerts.map((a) => a.started_on.slice(0, 10)))].sort()
@@ -71,13 +81,12 @@ export default function App() {
     if (!machine || !date) return
     setLoading(true); setErr(null)
     Promise.all([api.baseline(machine, date), api.pareto(machine, date, 5)])
-      .then(([b, p]) => { setBaseline(b); setPareto(p); setRefreshedAt(new Date().toLocaleTimeString('tr-TR', { hour12: false })) })
+      .then(([b, p]) => { setBaseline(b); setPareto(p) })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false))
   }, [machine, date])
 
   const reasons = useMemo(() => (pareto?.items || []).map((i) => i.reason), [pareto])
-  const showDatePill = tab !== 'alarmlar'
 
   return (
     <div className={`shell ${collapsed ? 'collapsed' : ''}`}>
@@ -94,12 +103,6 @@ export default function App() {
 
       <div className="body">
         <aside className="sidebar">
-          <div className="side-machine" title="Makine seç">
-            <Factory size={18} className="ic" />
-            <select value={machine} onChange={(e) => setMachine(e.target.value)}>
-              {machines.map((m) => <option key={m.unit_uid} value={m.name}>{m.name}</option>)}
-            </select>
-          </div>
           <nav className="side-nav">
             {TABS.map((t) => (
               <button key={t.id} title={t.label}
@@ -111,27 +114,26 @@ export default function App() {
         </aside>
 
         <main className="content">
-          {showDatePill && (
-            <div className="center">
-              <div className="datepill">
-                <div className="dt"><Calendar size={16} />
-                  <select value={date} onChange={(e) => setDate(e.target.value)}
-                          style={{ border: 'none', boxShadow: 'none', fontWeight: 700, padding: '2px 4px' }}>
-                    {dates.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div className="rf">SON YENİLEME<br />{refreshedAt || '—'}</div>
-                {loading && <span className="muted small">yükleniyor…</span>}
-              </div>
+          {/* Ortalanmış: makine seçici + tarih aralığı takvimi */}
+          <div className="topcenter">
+            <div className="field">
+              <Factory size={17} className="ic" />
+              <select value={machine} onChange={(e) => setMachine(e.target.value)}>
+                {machines.map((m) => <option key={m.unit_uid} value={m.name}>{m.name}</option>)}
+              </select>
             </div>
-          )}
+            <DateRangePicker availableDates={dates} start={range.start} end={range.end} onChange={setRange} />
+            {loading && <span className="muted small">yükleniyor…</span>}
+          </div>
 
           {err && <div className="err" style={{ marginBottom: 16 }}>{err}</div>}
 
           {tab === 'home' && (
             <>
               <HomeView baseline={baseline} dark={dark} onGoStoppages={() => setTab('duruslar')} />
-              <div style={{ marginTop: 18 }}><OeeTrendChart machine={machine} dark={dark} /></div>
+              <div style={{ marginTop: 18 }}>
+                <OeeTrendChart machine={machine} start={range.start} end={range.end} dark={dark} />
+              </div>
             </>
           )}
           {tab === 'duruslar' && (

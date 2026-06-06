@@ -171,11 +171,20 @@ def counter_trend(machine: str, date: str) -> dict:
             "total_pieces": total, "buckets": buckets}
 
 
-def oee_trend(machine: str, days: int = 30) -> dict:
-    """Bir makinenin son N vardiya günü OEE/A/P trendi (baseline karşılaştırma, slayt 'Shift Comparison')."""
+def oee_trend(machine: str, days: int = 30,
+              start: str | None = None, end: str | None = None) -> dict:
+    """
+    Bir makinenin OEE/A/P trendi. start+end verilirse o tarih aralığı,
+    yoksa son N gün (baseline karşılaştırma, slayt 'Shift Comparison').
+    """
     unit_uid = _resolve(machine)
     o = repository.oee_summary()
-    m = o[(o["level"] == 1) & (o["unit_uid"] == unit_uid)].sort_values("trans_date").tail(days)
+    m = o[(o["level"] == 1) & (o["unit_uid"] == unit_uid)].sort_values("trans_date")
+    if start and end:
+        s, e = pd.Timestamp(start).date(), pd.Timestamp(end).date()
+        m = m[(m["trans_date"].dt.date >= s) & (m["trans_date"].dt.date <= e)]
+    else:
+        m = m.tail(days)
     points = []
     for r in m.itertuples(index=False):
         a = core.safe_json(r.availability)

@@ -258,3 +258,55 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 5px; cur
 .shell.collapsed .side-label { display: none; }
 
 .content { flex: 1; min-width: 0; padding: 22px; }
+
+/* ===== Ortalanmış makine + tarih aralığı ===== */
+.topcenter { display: flex; justify-content: center; align-items: center; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 22px; }
+
+/* Range picker */
+.rangepick { position: relative; }
+.rangepick-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 12px; padding: 9px 14px; font-weight: 600; box-shadow: var(--shadow);
+  display: inline-flex; align-items: center; gap: 8px; }
+.rangepick-btn .arr { color: var(--muted); margin: 0 2px; }
+.rangepick-btn svg { color: var(--accent); }
+.rangepick-pop { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 14px; z-index: 40; width: 290px; }
+.rp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
+.rp-head button { background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 4px; box-shadow: none; display: inline-flex; }
+.rp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.rp-dow { text-align: center; font-size: 11px; color: var(--muted); font-weight: 700; padding: 4px 0; }
+.rp-day { aspect-ratio: 1; border: none; background: var(--panel2); color: var(--text);
+  border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: none; padding: 0; }
+.rp-day:hover { background: var(--accent-soft); }
+.rp-day.nodata { opacity: .34; }  /* verisiz gün: soluk ama yine de seçilebilir */
+.rp-day.inrange { background: rgba(43,108,240,.30); color: var(--accent); opacity: 1; font-weight: 700; }
+.rp-day.sel { background: var(--accent); color: #fff; opacity: 1; }
+
+/* ===== Makine OEE: yatay A + dikey OEE/P/Q ===== */
+.hbar-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.hbar-top span { color: var(--muted); font-weight: 600; }
+.hbar-top b { font-size: 18px; }
+.hbar { height: 13px; background: var(--panel2); border-radius: 999px; overflow: hidden; }
+.hbar > span { display: block; height: 100%; border-radius: 999px; transition: width .5s ease; }
+
+.vbars { display: flex; justify-content: space-around; align-items: flex-end; gap: 14px; margin-top: 20px; }
+.vbar { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: 1; }
+.vbar-pct { font-weight: 800; font-size: 15px; }
+.vbar-track { width: 100%; max-width: 70px; height: 120px; background: var(--panel2);
+  border-radius: 10px; display: flex; align-items: flex-end; overflow: hidden; }
+.vbar-fill { width: 100%; border-radius: 10px 10px 0 0; transition: height .5s ease; min-height: 3px; }
+.vbar-name { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+
+/* ===== En İyi 3 Makine ===== */
+.top3 { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.top3-head { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 13px;
+  color: var(--muted); margin-bottom: 10px; }
+.top3-head svg { color: var(--amber); }
+.top3-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.top3-rk { width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 12px; font-weight: 800;
+  display: grid; place-items: center; flex-shrink: 0; }
+.top3-nm { flex: 1; font-weight: 600; }
+.top3-oee { font-weight: 800; font-variant-numeric: tabular-nums; }

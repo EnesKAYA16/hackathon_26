@@ -34,7 +34,8 @@ export const api = {
   baseline: (m, d) => get(`/oee/baseline?machine=${q(m)}&date=${d}`),
   pareto: (m, d, n = 5) => get(`/oee/pareto?machine=${q(m)}&date=${d}&top_n=${n}`),
   stoppageTrend: (m, d) => get(`/oee/stoppage-trend?machine=${q(m)}&date=${d}`),
-  oeeTrend: (m, days = 30) => get(`/oee/trend?machine=${q(m)}&days=${days}`),
+  oeeTrend: (m, { start, end, days = 30 } = {}) =>
+    get(`/oee/trend?machine=${q(m)}` + (start && end ? `&start=${start}&end=${end}` : `&days=${days}`)),
   counterTrend: (m, d) => get(`/oee/counter-trend?machine=${q(m)}&date=${d}`),
   whatif: (body) => post('/oee/whatif', body),
   financeDefaults: () => get('/finance/assumptions'),

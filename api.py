@@ -296,9 +296,11 @@ def stoppage_trend(machine: str = Query(examples=["Makine 1"]),
 
 @app.get("/oee/trend", tags=["oee"])
 def oee_trend(machine: str = Query(examples=["Makine 1"]),
-              days: int = Query(30, ge=2, le=180)):
-    """Bir makinenin son N gün OEE/A/P trendi."""
-    return _guard(lambda: service.oee_trend(machine, days))
+              days: int = Query(30, ge=2, le=180),
+              start: str | None = Query(default=None, examples=["2025-10-20"]),
+              end: str | None = Query(default=None, examples=["2025-11-20"])):
+    """Bir makinenin OEE/A/P trendi (start+end aralığı veya son N gün)."""
+    return _guard(lambda: service.oee_trend(machine, days, start, end))
 
 
 @app.get("/oee/counter-trend", tags=["oee"])

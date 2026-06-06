@@ -1,17 +1,13 @@
-import { Clock, ArrowRight } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Clock, ArrowRight, Trophy } from 'lucide-react'
 import Card from './Card.jsx'
-import Gauge from './Gauge.jsx'
 import Donut from './Donut.jsx'
-import { fmtHM, pct } from '../api.js'
+import { api, fmtHM, pct } from '../api.js'
 
-function Metric({ name, v }) {
-  return (
-    <div className="metric3">
-      <div className="nm">{name}</div>
-      <div className="pc">{Math.round(v * 100)}%</div>
-      <div className="pb"><span style={{ width: `${Math.min(v * 100, 100)}%` }} /></div>
-    </div>
-  )
+function color(v) {
+  if (v >= 0.6) return 'var(--green)'
+  if (v >= 0.3) return 'var(--amber)'
+  return 'var(--red)'
 }
 
 function Chip({ tone, label, value }) {
@@ -34,6 +30,54 @@ function TdRow({ color, name, p, v }) {
   )
 }
 
+// Üstte yatay Kullanılabilirlik, altta OEE/Performans/Kalite dikey sütunlar.
+function OeeBars({ A, oee, P, Q }) {
+  const cols = [
+    { name: 'OEE', v: oee, c: 'var(--accent)' },
+    { name: 'Performans', v: P, c: '#8b5cf6' },
+    { name: 'Kalite', v: Q, c: 'var(--green)' },
+  ]
+  return (
+    <div>
+      <div className="hbar-top"><span>Kullanılabilirlik (A)</span><b>{pct(A)}</b></div>
+      <div className="hbar"><span style={{ width: `${Math.min(A * 100, 100)}%`, background: color(A) }} /></div>
+      <div className="vbars">
+        {cols.map((c) => (
+          <div className="vbar" key={c.name}>
+            <div className="vbar-pct">{Math.round(c.v * 100)}%</div>
+            <div className="vbar-track"><div className="vbar-fill" style={{ height: `${Math.min(c.v * 100, 100)}%`, background: c.c }} /></div>
+            <div className="vbar-name">{c.name}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Top3({ date }) {
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    if (!date) return
+    api.fleetOverview(date)
+      .then((f) => setRows([...f.machines].sort((a, b) => b.oee - a.oee).slice(0, 3)))
+      .catch(() => setRows([]))
+  }, [date])
+  if (!rows || !rows.length) return null
+  const medal = ['#e0a72b', '#9aa7b4', '#cd7f43']
+  return (
+    <div className="top3">
+      <div className="top3-head"><Trophy size={15} /> En İyi 3 Makine ({date})</div>
+      {rows.map((m, i) => (
+        <div className="top3-row" key={m.unit_uid}>
+          <span className="top3-rk" style={{ background: medal[i] }}>{i + 1}</span>
+          <span className="top3-nm">{m.machine}</span>
+          <span className="top3-oee" style={{ color: color(m.oee) }}>{pct(m.oee)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function HomeView({ baseline, onGoStoppages, dark }) {
   if (!baseline) return <div className="spin">Yükleniyor…</div>
   const a = baseline.availability
@@ -48,16 +92,8 @@ export default function HomeView({ baseline, onGoStoppages, dark }) {
   return (
     <div className="grid cols-2">
       <Card title="Makine OEE">
-        <div className="center"><Gauge value={a.A} label="Kullanılabilirlik" /></div>
-        <div className="three">
-          <Metric name="OEE" v={baseline.oee} />
-          <Metric name="Performans" v={baseline.performance.P} />
-          <Metric name="Kalite" v={baseline.quality.Q} />
-        </div>
-        <div className="kv" style={{ marginTop: 16 }}>
-          <span className="k">● OEE Dahil · Üretilen parça</span>
-          <span className="v">{baseline.quality.product_sum} Ad</span>
-        </div>
+        <OeeBars A={a.A} oee={baseline.oee} P={baseline.performance.P} Q={baseline.quality.Q} />
+        <Top3 date={baseline.date} />
       </Card>
 
       <Card title="Makine Kullanılabilirliği"
