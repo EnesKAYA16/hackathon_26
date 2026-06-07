@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Activity, PauseCircle, Ban, Lightbulb, TrendingUp, Sparkles } from 'lucide-react'
-import { api, fmtHM } from '../api.js'
+import { api, fmtHM, fmtTime, fmtDate } from '../api.js'
 import Card from './Card.jsx'
 
-const time = (iso) => (iso ? new Date(iso).toLocaleTimeString('tr-TR', { hour12: false }) : '')
+const time = (iso) => fmtTime(iso)  // UTC (dataset saatiyle aynı)
 const likeClass = (l) => (l === 'Yüksek' ? 'good' : l === 'Orta' ? 'warn' : 'bad')
 
 // Basit markdown render (## başlık, - madde, **kalın**) — güvenli (HTML yok).
@@ -58,7 +58,7 @@ export default function RootCauseCard({ machine, alarmDates }) {
 
   const dateSelect = (
     <select value={date} onChange={(e) => setDate(e.target.value)}>
-      {(alarmDates || []).map((d) => <option key={d} value={d}>{d}</option>)}
+      {(alarmDates || []).map((d) => <option key={d} value={d}>{fmtDate(d)}</option>)}
     </select>
   )
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Gauge, Power, Boxes, ClipboardList, Bell } from 'lucide-react'
-import { api, pct } from '../api.js'
+import { api, pct, fmtDate } from '../api.js'
 import Card from './Card.jsx'
 
 function oeeColor(v) {            // v: yüzde (0-100)
@@ -58,7 +58,7 @@ export default function FleetView({ date }) {
       {/* 1) Filo KPI'ları */}
       <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 18 }}>
         <Kpi Icon={Gauge} tone="blue" label="Filonun Ortalama OEE'si" value={`%${k.avg_oee}`}
-             sub={`${date} · 7 günlük ortalama`} />
+             sub={`${fmtDate(date)} · 7 günlük ortalama`} />
         <Kpi Icon={Power} tone="green" label="Aktif Çalışan Makine" value={`${k.active}/${k.total}`}
              sub="vardiyada çalışan / toplam" />
         <Kpi Icon={Boxes} tone="amber" label="Toplam Günlük Üretim" value={k.total_production.toLocaleString()}
@@ -68,42 +68,61 @@ export default function FleetView({ date }) {
       {/* 2) Makine Durum Matrisi */}
       <div className="section-title">Makine Durum Matrisi</div>
       <div className="mx-grid">
-        {d.machines.map((m) => (
-          <div key={m.unit_uid} className={`mx-card ${m.status}`}>
-            <div className="mx-top">
-              <span className="mx-name">{m.machine}</span>
-              <span className="mx-badge">{m.status === 'running' ? 'Çalışıyor' : 'Durdu'}</span>
+        {d.machines.map((m) => {
+          const nodata = m.status === 'nodata' || m.has_data === false
+          return (
+            <div key={m.unit_uid} className={`mx-card ${m.status}`}>
+              <div className="mx-top">
+                <span className="mx-name">{m.machine}</span>
+                <span className="mx-badge">
+                  {nodata ? 'Veri Yok' : (m.status === 'running' ? 'Çalışıyor' : 'Durdu')}
+                </span>
+              </div>
+              {nodata ? (
+                <>
+                  <div className="mx-oee" style={{ color: 'var(--muted)' }}>—</div>
+                  <div className="mx-oee-l">bu aralıkta veri yok</div>
+                </>
+              ) : (
+                <>
+                  <div className="mx-oee" style={{ color: oeeColor(m.oee) }}>%{m.oee}</div>
+                  <div className="mx-oee-l">anlık OEE</div>
+                </>
+              )}
+              <div className="mx-meta">
+                <span><ClipboardList size={13} /> {m.workorders} iş emri</span>
+                <span><Bell size={13} /> {m.alarms} alarm</span>
+              </div>
             </div>
-            <div className="mx-oee" style={{ color: oeeColor(m.oee) }}>%{m.oee}</div>
-            <div className="mx-oee-l">anlık OEE</div>
-            <div className="mx-meta">
-              <span><ClipboardList size={13} /> {m.workorders} iş emri</span>
-              <span><Bell size={13} /> {m.alarms} alarm</span>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* 3) Öncelik Panosu + 7 günlük trend */}
       <div className="section-title" style={{ marginTop: 24 }}>Öncelik Panosu (7 günlük ort. OEE — en kötü üstte)</div>
-      <Card title={`Filo · ${date}`} noPad>
+      <Card title={`Filo · ${fmtDate(date)}`} noPad>
         <table className="atable">
           <thead>
             <tr><th>#</th><th>Makine</th><th>OEE (7g ort.)</th><th>Availability</th>
               <th>Performans</th><th>Plansız Duruş</th><th style={{ width: 120 }}>Trend (Son 7 Gün)</th></tr>
           </thead>
           <tbody>
-            {d.board.map((m, i) => (
-              <tr key={m.unit_uid}>
-                <td className="muted">{i + 1}</td>
-                <td><b>{m.machine}</b></td>
-                <td style={{ color: oeeColor(m.avg_oee_7d), fontWeight: 800 }}>%{m.avg_oee_7d}</td>
-                <td>%{m.availability}</td>
-                <td>%{m.performance}</td>
-                <td style={{ color: 'var(--red)' }}>{m.unplanned_h.toFixed(1)} sa</td>
-                <td><Sparkline values={m.oee_7d} /></td>
-              </tr>
-            ))}
+            {d.board.map((m, i) => {
+              const nd = m.avg_oee_7d == null
+              return (
+                <tr key={m.unit_uid} className={nd ? 'row-nodata' : ''}>
+                  <td className="muted">{i + 1}</td>
+                  <td><b>{m.machine}</b></td>
+                  {nd
+                    ? <td className="muted">Veri Yok</td>
+                    : <td style={{ color: oeeColor(m.avg_oee_7d), fontWeight: 800 }}>%{m.avg_oee_7d}</td>}
+                  <td>{nd ? '—' : `%${m.availability}`}</td>
+                  <td>{nd ? '—' : `%${m.performance}`}</td>
+                  <td style={{ color: 'var(--red)' }}>{nd ? '—' : `${m.unplanned_h.toFixed(1)} sa`}</td>
+                  <td><Sparkline values={m.oee_7d} /></td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </Card>

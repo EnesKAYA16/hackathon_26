@@ -334,15 +334,28 @@ def root_cause_card(unit_uid: str, date: str, window_min: int | None = None) -> 
         shift_date = _shift_date_of(primary_time)
         agg = get_unplanned_by_reason(unit_uid, shift_date)
         total_ms = float(agg["total_ms"].sum())
+        total_h = ms_to_hours(total_ms)
+        primary = alarms[0]
+        top_reason = agg.iloc[0]["reason"] if not agg.empty else "plansız duruş"
+        top_h = ms_to_hours(float(agg.iloc[0]["total_ms"])) if not agg.empty else 0.0
+        note = (
+            f"Bu makinede {shift_date} vardiyasında toplam {total_h:.1f} saat plansız duruş "
+            f"kaydedildi; en büyük kalem '{top_reason}' (~{top_h:.1f} sa). '{primary['message']}' "
+            f"alarmı geçmişte {primary['recurrence_total']} kez tekrarladığı için bu kaybın "
+            f"önemli bir bölümünden sorumlu olabilir. Alarmın kök nedenini kalıcı gidermek, "
+            f"geri kazanılacak üretim saatlerini doğrudan Availability (A) artışına çevirir. "
+            f"Beklenen OEE/finansal etkiyi (geri kazanılan saat, ekstra üretim, ROI ve geri ödeme "
+            f"süresi) Duruşlar → What-If Simülasyonu sekmesinde sayısallaştırabilirsiniz."
+        )
         downtime_context = {
             "shift_date": shift_date,
             "total_unplanned_ms": total_ms,
-            "total_unplanned_h": ms_to_hours(total_ms),
+            "total_unplanned_h": total_h,
             "top_reasons": [
                 {"reason": r.reason, "hours": ms_to_hours(r.total_ms)}
                 for r in agg.head(3).itertuples(index=False)
             ],
-            "note": "Tekrarlayan alarmı kalıcı çözmek bu plansız duruşu azaltır -> What-If/ROI ile parasal etki hesaplanabilir.",
+            "note": note,
         }
     except Exception:
         downtime_context = None

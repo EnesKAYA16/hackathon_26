@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { api, fmtHM, fmtCycle } from '../api.js'
+import { api, fmtHM, fmtCycle, fmtDateTime, fmtDate } from '../api.js'
 import Card from './Card.jsx'
 
-const time = (iso) => (iso ? new Date(iso).toLocaleString('tr-TR', { hour12: false }) : '—')
+const time = (iso) => fmtDateTime(iso)  // UTC + DD.MM.YYYY HH:mm:ss
 
 export default function WorkOrdersView({ machine, date }) {
   const [data, setData] = useState(null)
@@ -18,7 +18,7 @@ export default function WorkOrdersView({ machine, date }) {
   if (!data) return <div className="spin">Yükleniyor…</div>
 
   return (
-    <Card title={`İş Emirleri · ${machine} · ${date}`}
+    <Card title={`İş Emirleri · ${machine} · ${fmtDate(date)}`}
           action={<span className="muted small">{data.count} kayıt</span>} noPad>
       <table className="atable">
         <thead>

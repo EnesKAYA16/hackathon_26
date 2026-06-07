@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Package, Repeat, Boxes } from 'lucide-react'
-import { api, fmtHM, fmtCycle } from '../api.js'
+import { api, fmtHM, fmtCycle, fmtDate } from '../api.js'
 import Card from './Card.jsx'
 
 function Kpi({ Icon, tone, label, value, sub }) {
@@ -29,7 +29,7 @@ export default function StockView({ machine, start, end }) {
   if (err) return <div className="err">{err}</div>
   if (!data) return <div className="spin">Yükleniyor…</div>
 
-  const range = data.start === data.end ? data.start : `${data.start} → ${data.end}`
+  const range = data.start === data.end ? fmtDate(data.start) : `${fmtDate(data.start)} → ${fmtDate(data.end)}`
   const totalMs = data.total_duration_ms || 1
 
   return (
@@ -39,7 +39,7 @@ export default function StockView({ machine, start, end }) {
         <Kpi Icon={Repeat} tone="amber" label="Toplam Çalışma (run)" value={data.total_runs}
              sub={`${fmtHM(data.total_duration_ms)} toplam süre`} />
         <Kpi Icon={Boxes} tone="green" label="Toplam Üretim (adet)" value={data.total_produced.toLocaleString()}
-             sub="oee_summary ProductSum (gerçek)" />
+             sub="oee_summary ProductSum" />
       </div>
 
       <Card title={`Stok / Program Özeti · ${machine} · ${range}`} noPad>

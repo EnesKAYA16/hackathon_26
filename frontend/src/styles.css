@@ -284,6 +284,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 5px; cur
 .rp-day.nodata { opacity: .34; }  /* verisiz gün: soluk ama yine de seçilebilir */
 .rp-day.inrange { background: rgba(43,108,240,.30); color: var(--accent); opacity: 1; font-weight: 700; }
 .rp-day.sel { background: var(--accent); color: #fff; opacity: 1; }
+.rp-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px;
+  padding-top: 12px; border-top: 1px solid var(--border); }
+.rp-presets button { background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 7px 0; font-size: 12.5px; font-weight: 700; cursor: pointer; box-shadow: none; }
+.rp-presets button:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* ===== Makine OEE: yatay A + dikey OEE/P/Q ===== */
 .hbar-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
@@ -356,7 +361,70 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 5px; cur
 .mx-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
 .mx-card.running .mx-badge { background: var(--green-soft); color: var(--green); }
 .mx-card.stopped .mx-badge { background: var(--red-soft); color: var(--red); }
+.mx-card.nodata { border-top-color: var(--border); opacity: .72; }
+.mx-card.nodata .mx-badge { background: var(--bg); color: var(--muted); }
+.row-nodata { opacity: .6; }
 .mx-oee { font-size: 27px; font-weight: 800; line-height: 1; margin-top: 10px; }
 .mx-oee-l { color: var(--muted); font-size: 11px; margin-top: 2px; }
 .mx-meta { display: flex; gap: 14px; margin-top: 11px; color: var(--muted); font-size: 12px; }
 .mx-meta span { display: inline-flex; align-items: center; gap: 5px; }
+
+/* ===== What-If yeni UX ===== */
+.wf-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.wf-kpi { border-radius: 14px; padding: 14px 16px; border: 1px solid var(--border); background: var(--panel2); }
+.wf-kpi-l { font-size: 12px; font-weight: 700; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.wf-kpi-v { font-size: 30px; font-weight: 900; line-height: 1.1; margin: 6px 0 2px; letter-spacing: -.02em; }
+.wf-kpi-s { font-size: 12px; color: var(--muted); }
+.wf-kpi.good { background: var(--green-soft); } .wf-kpi.good .wf-kpi-v { color: var(--green); }
+.wf-kpi.bad { background: var(--red-soft); } .wf-kpi.bad .wf-kpi-v { color: var(--red); }
+.wf-kpi.blue { background: var(--accent-soft); } .wf-kpi.blue .wf-kpi-v { color: var(--accent); }
+
+.wf-controls { display: flex; flex-direction: column; gap: 12px; }
+.wf-lever { background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.wf-lever-tag { display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase; padding: 3px 9px; border-radius: 999px; }
+.wf-lever-tag.a { background: var(--blue-soft); color: var(--accent); }
+.wf-lever-tag.p { background: #efe7fd; color: #7c3aed; }
+.wf-lever-tag.q { background: var(--green-soft); color: var(--green); }
+[data-theme="dark"] .wf-lever-tag.p { background: #2a2140; color: #b89cff; }
+.wf-lever-row { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 4px; }
+.wf-lever-label { color: var(--muted); font-weight: 600; font-size: 13px; }
+.wf-lever-val { font-weight: 800; font-size: 16px; }
+.wf-lever input[type="range"] { width: 100%; height: 6px; accent-color: var(--accent); }
+
+/* ===== What-If slider + sayısal input ===== */
+.wf-si { display: flex; align-items: center; gap: 10px; margin: 4px 0 2px; }
+.wf-si input[type="range"] { flex: 1; height: 6px; accent-color: var(--accent); }
+.wf-si-num { display: flex; align-items: center; gap: 3px; }
+.wf-si-num input { width: 52px; text-align: right; padding: 5px 7px; border-radius: 8px;
+  font-weight: 700; font-size: 13px; }
+.wf-si-num span { color: var(--muted); font-weight: 700; font-size: 13px; }
+
+/* ===== #4 Header boyut standardizasyonu (makine seçici = tarih seçici) ===== */
+.topcenter { align-items: stretch; }
+.topcenter .field { height: 42px; align-items: center; }
+.topcenter .field select,
+.topcenter .rangepick-btn {
+  height: 42px; box-sizing: border-box; border-radius: 10px;
+  padding: 0 14px; font-size: 14px; font-weight: 600;
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  display: inline-flex; align-items: center;
+}
+.topcenter .rangepick, .topcenter .rangepick .rangepick-btn { height: 42px; }
+
+/* ===== PDF Aktar butonu (tarih seçiciyle aynı yükseklik/hiza) ===== */
+.pdf-btn {
+  height: 42px; box-sizing: border-box; border-radius: 10px;
+  padding: 0 16px; font-size: 14px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px;
+  color: #fff; border: 1px solid transparent;
+  background: linear-gradient(135deg, var(--accent), #1e57d6);
+  box-shadow: var(--shadow);
+  transition: filter .15s ease, transform .05s ease;
+}
+.pdf-btn:hover:not(:disabled) { filter: brightness(1.07); }
+.pdf-btn:active:not(:disabled) { transform: translateY(1px); }
+.pdf-btn:disabled { opacity: .7; cursor: default; }
+.pdf-btn svg { color: #fff; }
+.spin-ic { animation: pdf-spin .8s linear infinite; }
+@keyframes pdf-spin { to { transform: rotate(360deg); } }

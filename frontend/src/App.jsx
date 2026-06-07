@@ -3,7 +3,8 @@ import {
   Home, Pause, ClipboardList, Package, Bell, LayoutGrid,
   Sun, Moon, Factory, Gauge, PanelLeft,
 } from 'lucide-react'
-import { api } from './api.js'
+import { api, fmtDate } from './api.js'
+import ExportPdfButton from './components/ExportPdfButton.jsx'
 import HomeView from './components/HomeView.jsx'
 import ParetoChart from './components/ParetoChart.jsx'
 import WhatIfPanel from './components/WhatIfPanel.jsx'
@@ -141,13 +142,24 @@ export default function App() {
                 onChange={(r) => setDate(r.end)} />
             ) : null}
             {loading && <span className="muted small">yükleniyor…</span>}
+            {/* PDF Aktar — tarih seçicinin yanına hizalı (Ana Sayfa/Duruşlar/Stok) */}
+            {(tab === 'home' || tab === 'duruslar' || tab === 'stock') && (
+              <ExportPdfButton
+                pageTitle={tab === 'home' ? 'Ana Sayfa Raporu'
+                  : tab === 'duruslar' ? 'Duruşlar Raporu' : 'Stok Raporu'}
+                machine={machine}
+                dateLabel={tab === 'home' ? `${fmtDate(range.start)} → ${fmtDate(range.end)}`
+                  : tab === 'stock' ? `${fmtDate(stockRange.start)} → ${fmtDate(stockRange.end)}`
+                  : fmtDate(date)}
+              />
+            )}
           </div>
 
           {err && <div className="err" style={{ marginBottom: 16 }}>{err}</div>}
 
           {tab === 'home' && (
             <>
-              <HomeView baseline={baseline} dark={dark} onGoStoppages={() => setTab('duruslar')} />
+              <HomeView baseline={baseline} dark={dark} range={range} onGoStoppages={() => setTab('duruslar')} />
               <div style={{ marginTop: 18 }}>
                 <OeeTrendChart machine={machine} start={range.start} end={range.end} dark={dark} />
               </div>
@@ -167,7 +179,7 @@ export default function App() {
           )}
           {tab === 'workorders' && <WorkOrdersView machine={machine} date={date} />}
           {tab === 'stock' && <StockView machine={machine} start={stockRange.start} end={stockRange.end} dark={dark} />}
-          {tab === 'alarmlar' && <AlarmlarView machine={machine} alarmDates={alarmDates} />}
+          {tab === 'alarmlar' && <AlarmlarView machine={machine} alarmDates={alarmDates} dark={dark} />}
           {tab === 'fleet' && <FleetView date={date} />}
 
           <footer className="small muted" style={{ marginTop: 28, textAlign: 'center' }}>

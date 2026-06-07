@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Legend,
 } from 'recharts'
-import { api } from '../api.js'
+import { api, fmtDate } from '../api.js'
 import Card from './Card.jsx'
 
 // Aralık seçiliyse GÜNLÜK; tek gün (başlangıç=bitiş veya sadece başlangıç) ise SAATLİK.
@@ -31,17 +31,18 @@ export default function OeeTrendChart({ machine, start, end, dark }) {
 
   return (
     <Card title={single ? 'OEE Trendi (saatlik)' : 'OEE Trendi'}
-          action={<span className="muted small">{single ? day : `${start} → ${end}`}</span>}>
+          action={<span className="muted small">{single ? fmtDate(day) : `${fmtDate(start)} → ${fmtDate(end)}`}</span>}>
       {err && <div className="err">{err}</div>}
       {!data && !err && <div className="spin">Yükleniyor…</div>}
       {data && (
         <ResponsiveContainer width="100%" height={230}>
           <LineChart data={data.points} margin={{ top: 8, right: 10, left: -12, bottom: 0 }}>
             <CartesianGrid stroke={grid} strokeDasharray="3 3" />
-            <XAxis dataKey={xKey} tick={{ fill: ax, fontSize: 10 }} interval={single ? 1 : 'preserveStartEnd'} minTickGap={20} />
+            <XAxis dataKey={xKey} tick={{ fill: ax, fontSize: 10 }} interval={single ? 1 : 'preserveStartEnd'} minTickGap={20}
+                   tickFormatter={(v) => (single ? v : fmtDate(v).slice(0, 5))} />
             <YAxis tick={{ fill: ax, fontSize: 11 }} unit="%" />
             <Tooltip contentStyle={tip}
-                     labelFormatter={(l) => (single ? `Saat ${l}` : l)}
+                     labelFormatter={(l) => (single ? `Saat ${l}` : fmtDate(l))}
                      formatter={(v, n) => [`${Number(v).toFixed(1)}%`, n]} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line dataKey="availability" name="Availability" stroke="#f0a52b" strokeWidth={2} dot={false} />

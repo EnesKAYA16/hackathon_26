@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Legend,
 } from 'recharts'
-import { api } from '../api.js'
+import { api, fmtDate } from '../api.js'
 import Card from './Card.jsx'
 
 // Vardiya günü boyunca saatlik planlı (yeşil) / plansız (kırmızı) duruş — slayt 005.
@@ -24,7 +24,7 @@ export default function StoppageTrendChart({ machine, date, dark }) {
 
   return (
     <Card title="Duruş Zaman Serisi (saatlik)"
-          action={<span className="muted small">{date} · planlı vs plansız (dk)</span>}>
+          action={<span className="muted small">{fmtDate(date)} · planlı vs plansız (dk)</span>}>
       {err && <div className="err">{err}</div>}
       {!data && !err && <div className="spin">Yükleniyor…</div>}
       {data && (

@@ -19,8 +19,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+import report
 import repository
 import service
 from config import settings
@@ -110,7 +112,7 @@ class WhatIfRequest(BaseModel):
     date: str = Field(examples=["2025-11-10"])
     durus_nedeni: str | None = Field(default=None, examples=["System Offline"])
     azaltma_yuzdesi: float = Field(default=0.0, ge=0.0, le=1.0, examples=[0.20])  # W1
-    reclassify: bool = Field(default=False, description="W2: PLANSIZ->PLANLI")    # W2
+    reclassify_pct: float = Field(default=0.0, ge=0.0, le=1.0, examples=[0.30])  # W2 (% planlıya çevir)
     cycle_improvement_pct: float = Field(default=0.0, ge=0.0, lt=1.0, examples=[0.10])  # W3 (P)
     scrap_rate: float = Field(default=0.0, ge=0.0, lt=1.0, examples=[0.03])       # W4 (Q)
     finance: FinanceIn | None = Field(default=None,
@@ -158,12 +160,13 @@ class WhatIfOut(BaseModel):
     date: str
     durus_nedeni: str | None
     azaltma_yuzdesi: float
-    reclassify: bool
+    reclassify_pct: float
     cycle_improvement_pct: float
     scrap_rate: float
     share: float
     reason_official_ms: float
     reduced_ms: float
+    reclassified_ms: float
     recovered_hours: float
     before: StateOut
     after: StateOut
@@ -198,6 +201,33 @@ class AlertParetoOut(BaseModel):
     machine: str | None
     unit_uid: str | None
     items: list[ParetoAlertItem]
+
+
+# --- PDF rapor (frontend aktif görünümünü gönderir) ---
+class ReportKpi(BaseModel):
+    label: str
+    value: str
+    sub: str | None = None
+
+
+class ReportChart(BaseModel):
+    title: str = "Grafik"
+    image: str  # 'data:image/png;base64,...' (recharts SVG'den 3x rasterize)
+
+
+class ReportTable(BaseModel):
+    title: str = "Tablo"
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[str]] = Field(default_factory=list)
+
+
+class ReportRequest(BaseModel):
+    page_title: str = "Analitik Rapor"
+    machine: str = "—"
+    date_label: str = "—"
+    kpis: list[ReportKpi] = Field(default_factory=list)
+    charts: list[ReportChart] = Field(default_factory=list)
+    tables: list[ReportTable] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +367,7 @@ def whatif(req: WhatIfRequest):
     finance_inputs = req.finance.model_dump() if req.finance else None
     return _guard(lambda: service.run_whatif(
         req.machine, req.date, req.durus_nedeni, req.azaltma_yuzdesi, finance_inputs,
-        reclassify=req.reclassify, cycle_improvement_pct=req.cycle_improvement_pct,
+        reclassify_pct=req.reclassify_pct, cycle_improvement_pct=req.cycle_improvement_pct,
         scrap_rate=req.scrap_rate))
 
 
@@ -417,8 +447,32 @@ def fleet_dashboard(date: str = Query(examples=["2025-11-10"])):
     return _guard(lambda: service.fleet_dashboard(date))
 
 
+@app.get("/fleet/ranking", tags=["fleet"])
+def fleet_ranking(start: str = Query(examples=["2025-10-20"]),
+                  end: str = Query(examples=["2025-11-10"]),
+                  top_n: int | None = Query(default=None, ge=1, le=20)):
+    """Tarih aralığında makinelerin ortalama OEE sıralaması (En İyi N Makine için)."""
+    return _guard(lambda: service.machine_ranking(start, end, top_n))
+
+
 @app.get("/fleet/alarm-patterns", tags=["fleet"])
 def fleet_alarm_patterns(min_machines: int = Query(2, ge=1, le=12),
                          top_n: int = Query(15, ge=1, le=100)):
     """Birden fazla makinede görülen ortak alarm örüntüleri."""
     return _guard(lambda: service.fleet_alarm_patterns(min_machines, top_n))
+
+
+@app.post("/report/pdf", tags=["report"])
+def report_pdf(req: ReportRequest):
+    """Frontend'in gönderdiği aktif görünümden (filtre + KPI + grafik + tablo)
+    kurumsal bir PDF rapor üretir ve indirilebilir dosya olarak döndürür."""
+    pdf = _guard(lambda: report.build_report_pdf(req.model_dump()))
+    # Content-Disposition başlığı latin-1 olmalı -> Türkçe karakterleri ASCII'ye indir.
+    _tr = str.maketrans("şŞığİĞçÇöÖüÜ", "sSigIGcCoOuU")
+    safe = (req.page_title or "rapor").translate(_tr).lower().replace(" ", "_")
+    safe = "".join(ch for ch in safe if ch.isascii() and (ch.isalnum() or ch == "_")) or "rapor"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="oee_{safe}.pdf"'},
+    )

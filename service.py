@@ -355,7 +355,7 @@ def _coerce_finance(d: dict | None) -> dict:
 
 def run_whatif(machine: str, date: str, durus_nedeni: str | None = None,
                azaltma_yuzdesi: float = 0.0, finance_inputs: dict | None = None,
-               reclassify: bool = False, cycle_improvement_pct: float = 0.0,
+               reclassify_pct: float = 0.0, cycle_improvement_pct: float = 0.0,
                scrap_rate: float = 0.0) -> dict:
     """
     OEE'nin A/P/Q kaldıraçlarında What-If + FİNANSAL etki (JSON-güvenli).
@@ -363,7 +363,7 @@ def run_whatif(machine: str, date: str, durus_nedeni: str | None = None,
     """
     unit_uid = _resolve(machine)
     sim = whatif.simulate_whatif(unit_uid, date, durus_nedeni, azaltma_yuzdesi,
-                                 reclassify=reclassify,
+                                 reclassify_pct=reclassify_pct,
                                  cycle_improvement_pct=cycle_improvement_pct,
                                  scrap_rate=scrap_rate)
 
@@ -384,7 +384,8 @@ def run_whatif(machine: str, date: str, durus_nedeni: str | None = None,
         "machine": machine, "unit_uid": unit_uid, "date": date,
         "durus_nedeni": _native(sim["durus_nedeni"]),
         "azaltma_yuzdesi": _native(sim["azaltma_yuzdesi"]),
-        "reclassify": bool(sim["reclassify"]),
+        "reclassify_pct": _native(sim["reclassify_pct"]),
+        "reclassified_ms": _native(sim["reclassified_ms"]),
         "cycle_improvement_pct": _native(sim["cycle_improvement_pct"]),
         "scrap_rate": _native(sim["scrap_rate"]),
         "share": _native(sim["share"]),
@@ -625,12 +626,16 @@ def stock_summary(machine: str, start: str, end: str | None = None) -> dict:
         o = str(r.order_no)
         a = agg.setdefault(o, {"runs": 0, "dur": 0.0, "produced": 0.0, "cyc": []})
         a["runs"] += 1
-        a["dur"] += float(r.duration_milliseconds)
+        dur = float(r.duration_milliseconds)
+        dur_ok = not math.isnan(dur)
+        if dur_ok:                              # bazı iş emri kayıtlarında süre boş (NaN) -> 0 say
+            a["dur"] += dur
         if has_counter:
             a["produced"] += float(cw.loc[(cw["slice_on"] >= r.started_on)
                                           & (cw["slice_on"] <= r.ended_on), "value"].sum())
         if pd.notna(r.stock_cycle):
-            a["cyc"].append(min(float(r.stock_cycle), float(r.duration_milliseconds)))  # çevrim<=süre
+            cyc = float(r.stock_cycle)
+            a["cyc"].append(min(cyc, dur) if dur_ok else cyc)  # çevrim<=süre (süre boşsa çevrim aynen)
 
     items = [{
         "order_no": o,
@@ -648,7 +653,9 @@ def stock_summary(machine: str, start: str, end: str | None = None) -> dict:
             & (om["trans_date"].dt.date <= pd.Timestamp(end).date())]
     total_produced = int(sum(core.safe_json(q).get("ProductSum", 0) for q in om["quality"]))
 
-    return {
+    # _jsonify: NaN/numpy değerleri JSON-güvenli hale getir (duration/cycle NaN -> None;
+    # aksi halde FastAPI yanıtı serialize ederken 500 "nan not JSON compliant" verir).
+    return _jsonify({
         "machine": machine, "unit_uid": unit_uid, "start": start, "end": end,
         "count": len(items),
         "total_runs": sum(i["runs"] for i in items),
@@ -656,7 +663,7 @@ def stock_summary(machine: str, start: str, end: str | None = None) -> dict:
         "total_produced": total_produced,            # ProductSum (gerçek, tüm makineler)
         "has_program_counter": has_counter,           # program-bazlı üretim var mı (Fanuc)
         "items": items,
-    }
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -679,11 +686,11 @@ def get_deviation(machine: str, center: str, signal: str | None = None,
 # ---------------------------------------------------------------------------
 
 def _oee_7d_values(oee_df, unit_uid: str, date: str) -> list:
-    """Bir makinenin <= gün olan son 7 vardiya günü OEE değeri (% , GERÇEK)."""
+    """Bir makinenin <= gün olan son 7 vardiya günü OEE değeri (% , GERÇEK; nan elenir)."""
     target = pd.Timestamp(date).date()
     m = oee_df[(oee_df["level"] == 1) & (oee_df["unit_uid"] == unit_uid)]
     m = m[m["trans_date"].dt.date <= target].sort_values("trans_date").tail(7)
-    return [round(float(r.oee) * 100, 2) for r in m.itertuples(index=False)]
+    return [round(float(r.oee) * 100, 2) for r in m.itertuples(index=False) if pd.notna(r.oee)]
 
 
 _CRIT_KEYS = ("EMERGENCY", "FAILED", "OVERLOAD", "PRESSURE", "FIRE", "CHUCK", "SERVO", "DOOR")
@@ -693,6 +700,29 @@ def _alarm_severity(msg: str) -> str:
     """Alarm metnine göre şiddet sınıfı (gerçek metinden türetilir, uydurma değil)."""
     u = str(msg).upper()
     return "Kritik" if any(k in u for k in _CRIT_KEYS) else "Uyarı"
+
+
+def machine_ranking(start: str, end: str, top_n: int | None = None) -> dict:
+    """
+    Tarih ARALIĞINDA makinelerin ortalama OEE'sine göre sıralaması (dinamik).
+    'En İyi 3 Makine' için; oee_summary'den GERÇEK ortalama (nan'lar elenir).
+    """
+    o = repository.oee_summary()
+    s, e = pd.Timestamp(start).date(), pd.Timestamp(end).date()
+    rows = []
+    for m in list_machines():
+        if not m["is_enabled"]:
+            continue
+        mm = o[(o["level"] == 1) & (o["unit_uid"] == m["unit_uid"])]
+        mm = mm[(mm["trans_date"].dt.date >= s) & (mm["trans_date"].dt.date <= e)]
+        vals = [float(x) for x in mm["oee"] if pd.notna(x)]
+        avg = round(sum(vals) / len(vals) * 100, 2) if vals else 0.0
+        rows.append({"machine": m["name"], "unit_uid": m["unit_uid"],
+                     "avg_oee": avg, "days": len(vals)})
+    rows.sort(key=lambda r: r["avg_oee"], reverse=True)
+    if top_n:
+        rows = rows[:top_n]
+    return {"start": start, "end": end, "machines": rows}
 
 
 def fleet_dashboard(date: str) -> dict:
@@ -713,40 +743,45 @@ def fleet_dashboard(date: str) -> dict:
     rows, total_prod, active, avg_list = [], 0, 0, []
     for m in machines:
         uid, name = m["unit_uid"], m["name"]
+        has_data = True
         try:
-            b = get_baseline(name, date)
+            b = get_baseline(name, date)  # o gün için OEE kaydı yoksa ValueError
             oee = b["oee"] * 100
             A = b["availability"]["A"] * 100
             P = b["performance"]["P"] * 100
             produced = b["quality"]["product_sum"]
             unplanned_h = b["availability"]["unplanned_stop_h"]
-        except Exception:  # noqa: BLE001 — o gün veri yok / bozuk satır: makineyi atlama, 0 göster
+        except Exception:  # noqa: BLE001 — veri yok / bozuk satır: çökme yok, 'Veri Yok' işaretle
+            has_data = False
             oee = A = P = 0.0
             produced, unplanned_h = 0, 0.0
-        status = "running" if A > 0 else "stopped"
-        active += 1 if status == "running" else 0
+        status = ("running" if A > 0 else "stopped") if has_data else "nodata"
+        if status == "running":
+            active += 1
         total_prod += produced
         wcount = int(len(wo[(wo["unit_uid"] == uid) & (wo["started_on"] >= cstart) & (wo["started_on"] < cend)]))
         acount = int(len(al[(al["unit_uid"] == uid) & (al["started_on"].dt.date == tdate)]))
         spark = _oee_7d_values(oee_df, uid, date)
-        avg7 = round(sum(spark) / len(spark), 2) if spark else round(oee, 2)
-        avg_list.append(avg7)
+        avg7 = round(sum(spark) / len(spark), 2) if spark else (round(oee, 2) if has_data else None)
+        if has_data and spark:
+            avg_list.append(avg7)
         rows.append({
-            "machine": name, "unit_uid": uid,
+            "machine": name, "unit_uid": uid, "has_data": has_data,
             "oee": round(oee, 2), "availability": round(A, 2), "performance": round(P, 2),
             "produced": int(produced), "unplanned_h": round(unplanned_h, 2),
             "status": status, "workorders": wcount, "alarms": acount,
             "oee_7d": spark, "avg_oee_7d": avg7,
         })
 
-    board = sorted(rows, key=lambda r: r["avg_oee_7d"])  # en kötü 7g ortalama üstte
+    # Sıralama: veri olanlar OEE'ye göre (en kötü üstte), veri olmayanlar en sona.
+    board = sorted(rows, key=lambda r: (r["avg_oee_7d"] is None, r["avg_oee_7d"] or 0.0))
     avg_oee = round(sum(avg_list) / len(avg_list), 2) if avg_list else 0.0
-    return {
+    return _jsonify({
         "date": date,
         "kpi": {"avg_oee": avg_oee, "active": active, "total": len(machines),
-                "total_production": int(total_prod)},
+                "data_count": len(avg_list), "total_production": int(total_prod)},
         "machines": rows, "board": board,
-    }
+    })
 
 
 def fleet_alarm_patterns(min_machines: int = 2, top_n: int = 15) -> dict:

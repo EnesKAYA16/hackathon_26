@@ -5,3 +5,4 @@ uvicorn[standard]>=0.49
 pydantic>=2.10
 pydantic-settings>=2.6   # .env / config (Faz 3)
 duckdb>=1.5              # Nightwatch telemetri sorguları (Faz 3)
+reportlab>=4.0

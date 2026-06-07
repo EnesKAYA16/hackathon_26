@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import Card from './Card.jsx'
 import RootCauseCard from './RootCauseCard.jsx'
+import AlarmParetoChart from './AlarmParetoChart.jsx'
 
-export default function AlarmlarView({ machine, alarmDates }) {
+export default function AlarmlarView({ machine, alarmDates, dark }) {
   const [items, setItems] = useState([])
   const [err, setErr] = useState(null)
 
@@ -30,6 +31,10 @@ export default function AlarmlarView({ machine, alarmDates }) {
             <div className="pct">%{total ? ((it.count / total) * 100).toFixed(2) : '0'}</div>
           </div>
         ))}
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <AlarmParetoChart items={items} dark={dark} />
       </div>
 
       <Card title={`Alarm Sıklığı · ${machine}`} noPad>

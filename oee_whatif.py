@@ -188,7 +188,7 @@ def print_pareto(machine: str, target_date: str, pareto: pd.DataFrame) -> None:
 
 def simulate_whatif(unit_uid: str, target_date: str,
                     durus_nedeni: str | None = None, azaltma_yuzdesi: float = 0.0,
-                    reclassify: bool = False,
+                    reclassify_pct: float = 0.0,
                     cycle_improvement_pct: float = 0.0,
                     scrap_rate: float = 0.0) -> dict:
     """
@@ -206,6 +206,8 @@ def simulate_whatif(unit_uid: str, target_date: str,
     """
     if not 0.0 <= azaltma_yuzdesi <= 1.0:
         raise ValueError("azaltma_yuzdesi 0.0 ile 1.0 arasında olmalı.")
+    if not 0.0 <= reclassify_pct <= 1.0:
+        raise ValueError("reclassify_pct 0.0 ile 1.0 arasında olmalı.")
     if not 0.0 <= cycle_improvement_pct < 1.0:
         raise ValueError("cycle_improvement_pct 0.0 ile 1.0 (hariç) arasında olmalı.")
     if not 0.0 <= scrap_rate < 1.0:
@@ -223,10 +225,11 @@ def simulate_whatif(unit_uid: str, target_date: str,
     OEE_base = A_base * P_base * Q_base
     product_sum = bd["quality"]["ProductSum"]
 
-    # --- A kaldıracı (W1 / W2) ---
+    # --- A kaldıracı (W1 azalt + W2 yeniden sınıflandır, ikisi de % ile) ---
     share = 0.0
     reason_official_ms = 0.0
     reduced_ms = 0.0
+    reclassified_ms = 0.0
     new_unplanned = official_unplanned
     new_planned = planned_stop
     reason_label = None
@@ -243,13 +246,16 @@ def simulate_whatif(unit_uid: str, target_date: str,
         share = float(match["total_ms"].iloc[0]) / slice_total if slice_total else 0.0
         reason_official_ms = share * official_unplanned
 
-        if reclassify:  # W2: tamamını PLANLI'ya taşı (run-time sabit, A artar)
-            new_unplanned = official_unplanned - reason_official_ms
-            new_planned = planned_stop + reason_official_ms
-            reduced_ms = 0.0  # üretim zamanı geri kazanılmaz
-        else:           # W1: %X azalt
-            reduced_ms = reason_official_ms * azaltma_yuzdesi
-            new_unplanned = official_unplanned - reduced_ms
+        reduced_ms = reason_official_ms * azaltma_yuzdesi          # W1: tamamen kaldır (run-time kazandırır)
+        reclassified_ms = reason_official_ms * reclassify_pct       # W2: planlıya taşı (A izole artar)
+        # İkisi birlikte nedenin toplamını aşamaz -> oransal kırp.
+        tot = reduced_ms + reclassified_ms
+        if tot > reason_official_ms and tot > 0:
+            k = reason_official_ms / tot
+            reduced_ms *= k
+            reclassified_ms *= k
+        new_unplanned = official_unplanned - reduced_ms - reclassified_ms
+        new_planned = planned_stop + reclassified_ms
 
     A_new = compute_availability(work_total, new_planned, new_unplanned)["A"]
 
@@ -272,12 +278,13 @@ def simulate_whatif(unit_uid: str, target_date: str,
     return {
         "durus_nedeni": reason_label,
         "azaltma_yuzdesi": azaltma_yuzdesi,
-        "reclassify": reclassify,
+        "reclassify_pct": reclassify_pct,
         "cycle_improvement_pct": cycle_improvement_pct,
         "scrap_rate": scrap_rate,
         "share": share,
         "reason_official_ms": reason_official_ms,
         "reduced_ms": reduced_ms,
+        "reclassified_ms": reclassified_ms,
         "work_total": work_total,
         "planned_stop": planned_stop, "new_planned": new_planned,
         "official_unplanned": official_unplanned, "new_unplanned": new_unplanned,

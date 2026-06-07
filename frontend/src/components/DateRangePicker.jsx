@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react'
+import { fmtDate } from '../api.js'
 
 const DOW = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
 const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
@@ -27,6 +28,24 @@ export default function DateRangePicker({ availableDates, start, end, onChange, 
   const daysInMonth = new Date(y, mo + 1, 0).getDate()
   const cells = [...Array(startDow).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => new Date(y, mo, i + 1))]
 
+  // Hızlı ön ayarlar — en son mevcut tarihe göre geriye doğru (aralık modu).
+  const applyPreset = (kind) => {
+    const dates = availableDates || []
+    if (!dates.length) return
+    const last = dates[dates.length - 1]          // mevcut en son gün
+    const first = dates[0]                          // mevcut en eski gün
+    const e = new Date(last + 'T00:00')
+    const s = new Date(last + 'T00:00')
+    if (kind === '7d') s.setDate(s.getDate() - 6)
+    else if (kind === '1m') s.setMonth(s.getMonth() - 1)
+    else if (kind === '3m') s.setMonth(s.getMonth() - 3)
+    else if (kind === '6m') s.setMonth(s.getMonth() - 6)
+    let si = iso(s)
+    if (si < first) si = first                      // mevcut aralığın dışına taşma
+    onChange({ start: si, end: iso(e) })
+    setAnchor(null); setOpen(false)
+  }
+
   const inRange = (s) => !single && start && end && s > start && s < end
   const click = (d) => {
     const s = iso(d)
@@ -51,8 +70,8 @@ export default function DateRangePicker({ availableDates, start, end, onChange, 
       <button className="rangepick-btn" onClick={() => setOpen((o) => !o)}>
         <Calendar size={16} />
         {single
-          ? <b>{start || '—'}</b>
-          : <><b>{start || '—'}</b><span className="arr">→</span><b>{end || '—'}</b></>}
+          ? <b>{start ? fmtDate(start) : '—'}</b>
+          : <><b>{start ? fmtDate(start) : '—'}</b><span className="arr">→</span><b>{end ? fmtDate(end) : '—'}</b></>}
       </button>
       {open && (
         <div className="rangepick-pop">
@@ -78,6 +97,14 @@ export default function DateRangePicker({ availableDates, start, end, onChange, 
               )
             })}
           </div>
+          {!single && (
+            <div className="rp-presets">
+              <button type="button" onClick={() => applyPreset('7d')}>Son 7 Gün</button>
+              <button type="button" onClick={() => applyPreset('1m')}>Son 1 Ay</button>
+              <button type="button" onClick={() => applyPreset('3m')}>Son 3 Ay</button>
+              <button type="button" onClick={() => applyPreset('6m')}>Son 6 Ay</button>
+            </div>
+          )}
         </div>
       )}
     </div>

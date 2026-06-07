@@ -49,6 +49,7 @@ export const api = {
   stock: (m, start, end) => get(`/stock?machine=${q(m)}&start=${start}${end ? `&end=${end}` : ''}`),
   deviation: (m, center, signal) => get(`/rca/deviation?machine=${q(m)}&center=${q(center)}${signal ? `&signal=${q(signal)}` : ''}`),
   fleetDashboard: (d) => get(`/fleet/dashboard?date=${d}`),
+  fleetRanking: (start, end, n = 3) => get(`/fleet/ranking?start=${start}&end=${end}&top_n=${n}`),
   fleetAlarmPatterns: () => get('/fleet/alarm-patterns'),
 }
 
@@ -58,6 +59,16 @@ export const fmtHM = (ms) => {
   return `${Math.floor(min / 60)}s ${min % 60}d`
 }
 export const pct = (x) => `${(x * 100).toFixed(2)}%`
+
+// Tarih/saat: dataset UTC -> AYNI saat (yerel +3 kayması YOK) + Türkiye formatı DD.MM.YYYY
+export const fmtDate = (s) => {
+  if (!s) return '—'
+  const d = new Date(s.length <= 10 ? `${s}T00:00:00Z` : s)
+  return d.toLocaleDateString('tr-TR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+export const fmtTime = (iso) =>
+  iso ? new Date(iso).toLocaleTimeString('tr-TR', { timeZone: 'UTC', hour12: false }) : ''
+export const fmtDateTime = (iso) => (iso ? `${fmtDate(iso)} ${fmtTime(iso)}` : '—')
 
 // Çevrim/kısa süreler için saniye hassasiyetli format (örn. 8sn, 1d 30sn, 1s 3d).
 export const fmtCycle = (ms) => {

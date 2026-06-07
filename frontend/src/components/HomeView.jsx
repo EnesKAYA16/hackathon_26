@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Clock, ArrowRight, Trophy } from 'lucide-react'
 import Card from './Card.jsx'
 import Donut from './Donut.jsx'
-import { api, fmtHM, pct } from '../api.js'
+import { api, fmtHM, pct, fmtDate } from '../api.js'
 
 function color(v) {
   if (v >= 0.6) return 'var(--green)'
@@ -54,32 +54,32 @@ function OeeBars({ A, oee, P, Q }) {
   )
 }
 
-function Top3({ date }) {
+function Top3({ start, end }) {
   const [rows, setRows] = useState(null)
   useEffect(() => {
-    if (!date) return
-    // fleetDashboard machines.oee YÜZDE (örn. 3.12) döner.
-    api.fleetDashboard(date)
-      .then((f) => setRows([...f.machines].sort((a, b) => b.oee - a.oee).slice(0, 3)))
+    if (!start || !end) return
+    // Tarih ARALIĞINA göre dinamik ortalama OEE sıralaması (avg_oee yüzde).
+    api.fleetRanking(start, end, 3)
+      .then((r) => setRows(r.machines))
       .catch(() => setRows([]))
-  }, [date])
+  }, [start, end])
   if (!rows || !rows.length) return null
   const medal = ['#e0a72b', '#9aa7b4', '#cd7f43']
   return (
     <div className="top3">
-      <div className="top3-head"><Trophy size={15} /> En İyi 3 Makine ({date})</div>
+      <div className="top3-head"><Trophy size={15} /> En İyi 3 Makine ({fmtDate(start)} – {fmtDate(end)})</div>
       {rows.map((m, i) => (
         <div className="top3-row" key={m.unit_uid}>
           <span className="top3-rk" style={{ background: medal[i] }}>{i + 1}</span>
           <span className="top3-nm">{m.machine}</span>
-          <span className="top3-oee" style={{ color: color(m.oee / 100) }}>%{m.oee}</span>
+          <span className="top3-oee" style={{ color: color(m.avg_oee / 100) }}>%{m.avg_oee}</span>
         </div>
       ))}
     </div>
   )
 }
 
-export default function HomeView({ baseline, onGoStoppages, dark }) {
+export default function HomeView({ baseline, onGoStoppages, dark, range }) {
   if (!baseline) return <div className="spin">Yükleniyor…</div>
   const a = baseline.availability
   const wt = a.work_total_ms, ps = a.planned_stop_ms, us = a.unplanned_stop_ms, rt = a.run_time_ms
@@ -94,7 +94,7 @@ export default function HomeView({ baseline, onGoStoppages, dark }) {
     <div className="grid cols-2">
       <Card title="Makine OEE">
         <OeeBars A={a.A} oee={baseline.oee} P={baseline.performance.P} Q={baseline.quality.Q} />
-        <Top3 date={baseline.date} />
+        <Top3 start={range?.start} end={range?.end} />
       </Card>
 
       <Card title="Makine Kullanılabilirliği"
