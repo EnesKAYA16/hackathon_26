@@ -15,7 +15,6 @@ Endüstriyel üretim hatları için **OEE (Overall Equipment Effectiveness)** ba
 - [Çalıştırma](#-çalıştırma)
 - [API Endpoint'leri](#-api-endpointleri)
 - [Proje Yapısı](#-proje-yapısı)
-- [Ekran Görüntüleri](#-ekran-görüntüleri)
 
 ---
 
@@ -297,7 +296,7 @@ hackathon_26/
 | `OEE_CURRENCY` | `₺` | Para birimi simgesi |
 | `OEE_RCA_WINDOW_MINUTES` | `15` | RCA olay penceresi (dakika) |
 | `OEE_GEMINI_API_KEY` | *(boş)* | Google Gemini API anahtarı |
-| `OEE_GEMINI_MODEL` | `gemini-2.0-flash` | Gemini model adı |
+| `OEE_GEMINI_MODEL` | `gemini-3.5-flash` | Gemini model adı |
 
 ---
 
