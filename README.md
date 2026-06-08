@@ -6,6 +6,10 @@ Endüstriyel üretim hatları için **OEE (Overall Equipment Effectiveness)** ba
 
 ---
 
+##  🤝 Yapanlar
+- **Ahmet Aksoy**
+- **Mehmet Turunç** 
+
 ## 📋 İçindekiler
 
 - [Özellikler](#-özellikler)
